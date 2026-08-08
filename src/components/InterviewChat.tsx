@@ -281,9 +281,23 @@ export function InterviewChat({
         </form>
       </TerminalShell>
 
-      <aside className="hidden lg:block rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}>
+      <aside
+        className="hidden lg:block rounded-xl border"
+        style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
+      >
         <RoadmapTrail plan={plan} progress={progress} />
       </aside>
+
+      {/* Mobile: same trail, collapsed by default via a native <details> so it doesn't push the chat down */}
+      <details className="lg:hidden rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}>
+        <summary
+          className="cursor-pointer select-none px-4 py-2.5 mono text-[11px] uppercase tracking-wide"
+          style={{ color: "var(--fg-dim)" }}
+        >
+          interview roadmap · question {progress?.questionsAsked ?? 0}
+        </summary>
+        <RoadmapTrail plan={plan} progress={progress} />
+      </details>
     </div>
   );
 }
