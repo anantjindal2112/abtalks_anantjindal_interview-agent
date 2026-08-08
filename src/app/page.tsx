@@ -5,12 +5,14 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Hero } from "@/components/Hero";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { CandidatePicker } from "@/components/CandidatePicker";
+import { CandidateIntelligence } from "@/components/CandidateIntelligence";
 import { InterviewChat } from "@/components/InterviewChat";
 import { FeedbackReport } from "@/components/FeedbackReport";
 import type { Candidate, Feedback } from "@/lib/types";
 
 type Stage =
   | { name: "select" }
+  | { name: "profile"; candidate: Candidate }
   | { name: "interview"; candidate: Candidate; sessionId: string }
   | { name: "done"; candidate: Candidate; feedback: Feedback };
 
@@ -62,13 +64,23 @@ export default function Home() {
               className="rounded-xl border"
               style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
             >
-              <CandidatePicker
-                onSelect={(candidate) =>
-                  setStage({
-                    name: "interview",
-                    candidate,
-                    sessionId: crypto.randomUUID(),
-                  })
+              <CandidatePicker onSelect={(candidate) => setStage({ name: "profile", candidate })} />
+            </motion.div>
+          )}
+
+          {stage.name === "profile" && (
+            <motion.div
+              key={`profile-${stage.candidate.member.id}`}
+              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduceMotion ? undefined : { opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <CandidateIntelligence
+                candidate={stage.candidate}
+                onBack={() => setStage({ name: "select" })}
+                onBegin={() =>
+                  setStage({ name: "interview", candidate: stage.candidate, sessionId: crypto.randomUUID() })
                 }
               />
             </motion.div>

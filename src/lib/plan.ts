@@ -69,6 +69,57 @@ export function summarizeCandidate(candidate: Candidate) {
   return counts;
 }
 
+export type LearningMapEntry = { day: number; title: string; attempts?: number };
+
+export type LearningMap = {
+  completedDays: number;
+  totalDays: number;
+  strong: LearningMapEntry[]; // confident bucket
+  developing: LearningMapEntry[]; // struggled bucket
+  weakSignal: LearningMapEntry[]; // failed bucket
+  skipped: LearningMapEntry[];
+};
+
+/**
+ * The full pre-interview "learning map" — real topic titles grouped by
+ * signal strength, not just counts. Deliberately does NOT expose which
+ * exact days the interview plan will cover (that's decided separately by
+ * buildInterviewPlan and stays a surprise, same as a real interviewer's
+ * prep notes) — only the aggregate signal, which the candidate's own
+ * cohort performance already determined.
+ */
+export function buildLearningMap(candidate: Candidate): LearningMap {
+  const missions = [...(candidate.missions ?? [])].sort((a, b) => a.day - b.day);
+  const toEntry = (m: Mission): LearningMapEntry => ({
+    day: m.day,
+    title: getCurriculumDay(m.day)?.title ?? m.title,
+    attempts: m.attempts,
+  });
+
+  const strong: LearningMapEntry[] = [];
+  const developing: LearningMapEntry[] = [];
+  const weakSignal: LearningMapEntry[] = [];
+  const skipped: LearningMapEntry[] = [];
+
+  for (const m of missions) {
+    const bucket = bucketMission(m);
+    const entry = toEntry(m);
+    if (bucket === "confident") strong.push(entry);
+    else if (bucket === "struggled") developing.push(entry);
+    else if (bucket === "failed") weakSignal.push(entry);
+    else skipped.push(entry);
+  }
+
+  return {
+    completedDays: strong.length + developing.length + weakSignal.length,
+    totalDays: curriculum.days.length,
+    strong,
+    developing,
+    weakSignal,
+    skipped,
+  };
+}
+
 /**
  * Builds a deterministic, personalized interview plan from a candidate's
  * actual mission history. LLM discretion drives per-turn follow-ups; which

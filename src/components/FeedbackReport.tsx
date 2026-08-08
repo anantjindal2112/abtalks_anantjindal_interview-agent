@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { TerminalShell } from "./TerminalShell";
+import { Confetti } from "./Confetti";
 import type { Candidate, Feedback } from "@/lib/types";
 
 function toMarkdown(candidate: Candidate, feedback: Feedback): string {
@@ -106,7 +107,8 @@ export function FeedbackReport({
     >
       <TerminalShell title={`feedback@ai-cohort:~/report/${candidate.member.id}$`}>
         <div className="p-5 sm:p-6 flex flex-col gap-6">
-          <div>
+          <div className="relative">
+            <Confetti />
             <div className="mono text-[11px]" style={{ color: "var(--accent)" }}>
               ✓ interview complete
             </div>

@@ -1,3 +1,5 @@
+import { motion, useReducedMotion } from "framer-motion";
+
 export function TerminalShell({
   title,
   children,
@@ -9,6 +11,7 @@ export function TerminalShell({
   footer?: React.ReactNode;
   action?: React.ReactNode;
 }) {
+  const reduceMotion = useReducedMotion();
   return (
     <div
       className="rounded-xl border overflow-hidden flex flex-col"
@@ -21,7 +24,12 @@ export function TerminalShell({
         <span aria-hidden className="flex gap-1.5">
           <span className="size-2.5 rounded-full" style={{ background: "var(--danger)", opacity: 0.7 }} />
           <span className="size-2.5 rounded-full" style={{ background: "var(--warn)", opacity: 0.7 }} />
-          <span className="size-2.5 rounded-full" style={{ background: "var(--accent)", opacity: 0.7 }} />
+          <motion.span
+            className="size-2.5 rounded-full"
+            style={{ background: "var(--accent)" }}
+            animate={reduceMotion ? { opacity: 0.7 } : { opacity: [0.5, 1, 0.5] }}
+            transition={reduceMotion ? undefined : { duration: 2, repeat: Infinity, ease: "easeInOut" }}
+          />
         </span>
         <span className="mono text-xs truncate" style={{ color: "var(--fg-dim)" }}>
           {title}
