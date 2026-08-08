@@ -68,7 +68,15 @@ function FeatureCard({
   reduceMotion: boolean | null;
 }) {
   const [flipped, setFlipped] = useState(false);
-  const faceStyle: React.CSSProperties = { backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
+  // Both faces occupy the SAME CSS grid cell (grid-area: 1/1) instead of
+  // position:absolute with a guessed fixed height — the grid row then
+  // auto-sizes to whichever face is naturally taller, at every viewport
+  // width, so real text can never overflow past the card's own border.
+  const faceStyle: React.CSSProperties = {
+    gridArea: "1 / 1",
+    backfaceVisibility: "hidden",
+    WebkitBackfaceVisibility: "hidden",
+  };
 
   return (
     <motion.div
@@ -83,17 +91,16 @@ function FeatureCard({
         aria-pressed={flipped}
         aria-label={`${f.title} — click to ${flipped ? "show description" : "show a concrete example"}`}
         className="w-full text-left cursor-pointer block"
-        style={{ minHeight: 118 }}
       >
         <motion.div
-          className="relative w-full h-full"
+          className="w-full grid"
           animate={{ rotateY: flipped ? 180 : 0 }}
           transition={{ duration: reduceMotion ? 0 : DURATION.card * 1.8, ease: EASE_OUT }}
-          style={{ transformStyle: "preserve-3d", minHeight: 118 }}
+          style={{ transformStyle: "preserve-3d" }}
         >
           {/* front */}
           <div
-            className="absolute inset-0 rounded-lg border p-3.5 flex flex-col"
+            className="rounded-lg border p-3.5 flex flex-col"
             style={{ borderColor: "var(--border)", background: "var(--bg-inset)", ...faceStyle }}
           >
             <div className="flex items-start justify-between gap-2">
@@ -113,7 +120,7 @@ function FeatureCard({
           </div>
           {/* back */}
           <div
-            className="absolute inset-0 rounded-lg border p-3.5 flex flex-col"
+            className="rounded-lg border p-3.5 flex flex-col"
             style={{
               borderColor: "var(--accent-2)",
               background: "var(--bg-inset)",

@@ -6,6 +6,7 @@ import {
   fallbackTurn,
   isFeedback,
   isTurnDecision,
+  recentTranscript,
   safeParseJson,
   sanitizeFeedback,
   sanitizeTurnDecision,
@@ -87,7 +88,7 @@ export async function getNextTurn(
   // transcript yet) — fold the state block into a single trailing user turn
   // either way, same as appending a final system message in the Groq path.
   const contents: GeminiContent[] = [
-    ...toGeminiContents(session.transcript),
+    ...toGeminiContents(recentTranscript(session.transcript)),
     { role: "user", parts: [{ text: stateBlock }] },
   ];
 

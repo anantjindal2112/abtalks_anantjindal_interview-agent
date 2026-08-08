@@ -6,6 +6,7 @@ import {
   fallbackTurn,
   isFeedback,
   isTurnDecision,
+  recentTranscript,
   safeParseJson,
   sanitizeFeedback,
   sanitizeTurnDecision,
@@ -16,15 +17,26 @@ export type { TurnDecision, FeedbackResult };
 
 const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 
-let client: Groq | null = null;
-function getClient(): Groq {
-  if (!client) {
-    if (!process.env.GROQ_API_KEY) {
+type KeyedClient = { client: Groq; label: string };
+
+// Groq's real free-tier ceiling for openai/gpt-oss-120b is a 200k
+// tokens/DAY cap (not just the 8k/minute one) — good for roughly 8-10 full
+// interviews on a single key before every call 429s. If GROQ_API_KEY_BACKUP
+// is set, callGroq() automatically fails over to it once the primary key's
+// own retries are exhausted, which roughly doubles real demo-day capacity
+// before anyone ever sees the generic scripted fallback.
+let clients: KeyedClient[] | null = null;
+function getClients(): KeyedClient[] {
+  if (!clients) {
+    const primary = process.env.GROQ_API_KEY;
+    if (!primary) {
       throw new Error("GROQ_API_KEY is not set. Add it to .env.local and restart the server.");
     }
-    client = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    clients = [{ client: new Groq({ apiKey: primary }), label: "primary" }];
+    const backup = process.env.GROQ_API_KEY_BACKUP;
+    if (backup) clients.push({ client: new Groq({ apiKey: backup }), label: "backup" });
   }
-  return client;
+  return clients;
 }
 
 function toGroqMessages(transcript: TranscriptTurn[]): Groq.Chat.Completions.ChatCompletionMessageParam[] {
@@ -34,33 +46,44 @@ function toGroqMessages(transcript: TranscriptTurn[]): Groq.Chat.Completions.Cha
   }));
 }
 
-/** Calls the chat completion API with light retry/backoff on 429 / 5xx. */
+/**
+ * Calls the chat completion API with retry/backoff on 429/5xx, then — if a
+ * backup key is configured — fails over to it and retries again before
+ * finally giving up (which falls through to the deterministic fallback in
+ * getNextTurn/getFeedback below, unchanged).
+ */
 async function callGroq(
   messages: Groq.Chat.Completions.ChatCompletionMessageParam[],
   opts: { temperature: number }
 ): Promise<string> {
-  const groq = getClient();
+  const allClients = getClients();
   const maxAttempts = 3;
   let lastError: unknown;
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      const completion = await groq.chat.completions.create({
-        model: MODEL,
-        messages,
-        temperature: opts.temperature,
-        response_format: { type: "json_object" },
-      });
-      const content = completion.choices[0]?.message?.content;
-      if (!content) throw new Error("Empty response from Groq");
-      return content;
-    } catch (err) {
-      lastError = err;
-      const status = err instanceof Groq.APIError ? err.status : undefined;
-      const retryable = status === 429 || (typeof status === "number" && status >= 500);
-      if (!retryable || attempt === maxAttempts - 1) break;
-      const delay = 500 * 2 ** attempt;
-      await new Promise((r) => setTimeout(r, delay));
+  for (let clientIndex = 0; clientIndex < allClients.length; clientIndex++) {
+    const { client: groq, label } = allClients[clientIndex];
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const completion = await groq.chat.completions.create({
+          model: MODEL,
+          messages,
+          temperature: opts.temperature,
+          response_format: { type: "json_object" },
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error("Empty response from Groq");
+        return content;
+      } catch (err) {
+        lastError = err;
+        const status = err instanceof Groq.APIError ? err.status : undefined;
+        const retryable = status === 429 || (typeof status === "number" && status >= 500);
+        if (!retryable || attempt === maxAttempts - 1) break;
+        const delay = 500 * 2 ** attempt;
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    if (clientIndex < allClients.length - 1) {
+      console.error(`[groq] ${label} key exhausted its retries, failing over to backup key:`, lastError);
     }
   }
   throw lastError instanceof Error ? lastError : new Error("Groq request failed");
@@ -82,7 +105,7 @@ export async function getNextTurn(
 
   const messages: Groq.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: system },
-    ...toGroqMessages(session.transcript),
+    ...toGroqMessages(recentTranscript(session.transcript)),
     { role: "system", content: stateBlock },
   ];
 

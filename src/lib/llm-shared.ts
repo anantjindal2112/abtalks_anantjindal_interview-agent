@@ -4,7 +4,31 @@
 // identical guarantees (never fake a score, never let a malformed field
 // break the interview) instead of two copies drifting apart.
 import { DECISION_LABELS } from "./types";
-import type { Assessment, CategoryScores, DecisionLabel, SessionState } from "./types";
+import type { Assessment, CategoryScores, DecisionLabel, SessionState, TranscriptTurn } from "./types";
+
+/**
+ * Bounds the transcript sent on every per-turn decision call to the most
+ * recent exchanges, instead of resending the whole growing interview every
+ * time. The system prompt already carries the full interview plan, so the
+ * model doesn't need the verbatim early transcript to make a good decision
+ * on the CURRENT answer — only recent context matters for that. This caps
+ * per-call token cost for later turns instead of letting it grow with
+ * interview length, which matters against Groq's per-minute token cap when
+ * multiple calls land close together. Only used for getNextTurn — getFeedback
+ * intentionally still sees the FULL transcript, since an accurate final
+ * summary genuinely does need the whole conversation.
+ */
+const RECENT_TURNS_WINDOW = 12; // 6 exchanges — generous for follow-up coherence
+
+export function recentTranscript(transcript: TranscriptTurn[]): TranscriptTurn[] {
+  if (transcript.length <= RECENT_TURNS_WINDOW) return transcript;
+  const slice = transcript.slice(-RECENT_TURNS_WINDOW);
+  // Keep the window opening on the candidate's turn, not mid-exchange on the
+  // interviewer's — matters for Gemini specifically, which requires contents
+  // to start with role "user", and is just better conversational hygiene
+  // generally (don't open a window on a dangling question with no answer).
+  return slice[0]?.role === "interviewer" ? slice.slice(1) : slice;
+}
 
 export type TurnDecision = {
   action: "follow_up" | "next_topic" | "conclude";
