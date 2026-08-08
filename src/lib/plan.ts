@@ -7,6 +7,25 @@ import type { Candidate, Mission, MissionBucket, PlanTopic } from "./types";
 const TARGET_ANCHORS = 6;
 const MIN_DISTINCT_DAYS = 5;
 
+// Randomized per-topic framing so the same topic (even for the same
+// candidate run twice) doesn't get asked the same way every time. Picked
+// once when the plan is built and handed to the LLM as a suggested angle,
+// not a script — it still reacts to the actual conversation.
+const QUESTION_ANGLES = [
+  "a specific implementation trade-off they had to make",
+  "a failure mode or edge case they likely hit while building this",
+  "why they chose this tool/approach over an obvious alternative",
+  "how they'd explain the core idea to a junior teammate in one breath",
+  "what part of it was hardest to get working correctly",
+  "how they validated it actually worked, not just that it ran",
+  "how this piece connects to the rest of their overall system",
+  "a decision they'd make differently if starting over",
+];
+
+function pickAngle(): string {
+  return QUESTION_ANGLES[Math.floor(Math.random() * QUESTION_ANGLES.length)];
+}
+
 export function bucketMission(m: Mission): MissionBucket {
   if (m.skipped) return "skipped";
   if (m.passed === false) return "failed";
@@ -39,6 +58,7 @@ function toPlanTopic(item: Bucketed, reasonOverride?: string): PlanTopic {
     mission: item.mission,
     curriculumDay,
     reason: reasonOverride ?? reasonFor(item.bucket, title, item.mission.attempts),
+    angle: pickAngle(),
   };
 }
 

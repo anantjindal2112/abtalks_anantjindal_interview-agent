@@ -104,7 +104,10 @@ export async function getNextTurn(session: SessionState, isOpening: boolean): Pr
   ];
 
   try {
-    const raw = await callGroq(messages, { temperature: 0.5 });
+    // Higher than the feedback call's temperature on purpose — more lexical
+    // variety in question phrasing so the same topic doesn't read identically
+    // across different interviews. JSON-mode structure isn't affected by this.
+    const raw = await callGroq(messages, { temperature: 0.75 });
     const parsed = safeParseJson<TurnDecision>(raw);
     if (parsed && isTurnDecision(parsed)) return parsed;
   } catch {

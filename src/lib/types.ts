@@ -61,6 +61,7 @@ export type PlanTopic = {
   mission: Mission | null; // null only for the generic-curriculum fallback path
   curriculumDay: CurriculumDay | null; // null if the day isn't in curriculum.json
   reason: string; // short human-readable rationale, also fed to the LLM as context
+  angle: string; // randomized framing hint so the same topic isn't asked the same way twice
 };
 
 export type InterviewPhase = "warmup" | "core" | "capstone" | "done";

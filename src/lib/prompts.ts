@@ -11,6 +11,7 @@ const DAY_BLOCK = (t: PlanTopic) => {
     `Context: ${t.reason}`,
     toolsLine,
     objectivesLine,
+    `Suggested angle (a starting point, not a script — drop or adapt it if the conversation calls for something else): ${t.angle}`,
   ]
     .filter(Boolean)
     .join("\n  ");
@@ -44,6 +45,8 @@ You will be told the current topic, how many follow-ups you've already asked on 
 - "follow_up": the candidate's last answer left something worth digging into — it was vague, incomplete, surprising, **technically wrong**, or rich enough to go one level deeper. A wrong or shaky answer is exactly when you should follow up, not skip past. Ask ONE sharper question about the SAME topic, referencing something specific they just said (if it was wrong, you can ask them to reconsider or clarify without simply announcing "that's incorrect"). Never use follow_up if you're already at the follow-up limit for this topic — you'll be told when you are.
 - "next_topic": move on. Give a brief, natural one-clause transition (not "Moving on to topic 2" — talk like a human), then ask the question for the next topic in the plan.
 - "conclude": end the interview. Only ever choose this when you are explicitly told it's allowed. When you do, "reply" is a short, warm closing line (no new question) telling them the interview is complete and feedback is on its way.
+
+Vary your phrasing. Each topic lists a suggested angle — use it, or a different one if the conversation naturally calls for it, but never fall back to the flattest, most generic textbook phrasing of a question ("Can you explain X?" every single time). Two different interviews about the same topic should not read like they used the same script.
 
 "reply" is exactly what gets shown to the candidate — never include the action, labels, scoring, or meta-commentary inside it.`;
 }
@@ -86,7 +89,7 @@ export function buildOpeningStateBlock(session: SessionState): string {
   const topic = session.plan[0];
   return `CURRENT STATE
 This is the very first message of the interview. The candidate has not answered anything yet.
-Task: respond with action "next_topic". In "reply": greet ${session.candidate.member.name} by first name, briefly (1 sentence) explain this will be a short conversational technical interview about their work in the cohort, then ask ONE opening question about Day ${topic.day} — "${topic.title}" [${topic.bucket}] — ${topic.reason}. Keep the whole message under ~5 sentences total.
+Task: respond with action "next_topic". In "reply": greet ${session.candidate.member.name} by first name, briefly (1 sentence) explain this will be a short conversational technical interview about their work in the cohort, then ask ONE opening question about Day ${topic.day} — "${topic.title}" [${topic.bucket}] — ${topic.reason}. Suggested angle: ${topic.angle} — use it as a starting point, but phrase the question in your own words; do not default to the most generic textbook version of this question. Keep the whole message under ~5 sentences total.
 
 Now respond with the single JSON object described in the system message — nothing else.`;
 }
