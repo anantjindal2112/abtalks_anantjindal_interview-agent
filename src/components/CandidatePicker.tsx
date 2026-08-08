@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { sampleCandidates } from "@/lib/data";
 import { summarizeCandidate } from "@/lib/plan";
@@ -19,29 +19,145 @@ const BUCKET_LABEL: Record<string, string> = {
   skipped: "skipped",
 };
 
-function BucketBar({ candidate }: { candidate: Candidate }) {
+const PROFILE_LABEL: Record<string, string> = {
+  confident: "mostly first-try",
+  struggled: "earned it the hard way",
+  failed: "rough patches",
+  skipped: "selective",
+};
+
+const BUCKET_SEGMENTS: Array<[string, string]> = [
+  ["confident", "var(--accent)"],
+  ["struggled", "var(--warn)"],
+  ["failed", "var(--danger)"],
+  ["skipped", "var(--skip)"],
+];
+
+function dominantBucket(counts: Record<string, number>): string {
+  return Object.entries(counts).reduce((best, [k, v]) => (v > (counts[best] ?? -1) ? k : best), "confident");
+}
+
+function BucketBar({ candidate, animate }: { candidate: Candidate; animate: boolean }) {
   const counts = summarizeCandidate(candidate);
   const total = Math.max(1, candidate.missions.length);
-  const segments: Array<[keyof typeof counts, string]> = [
-    ["confident", "var(--accent)"],
-    ["struggled", "var(--warn)"],
-    ["failed", "var(--danger)"],
-    ["skipped", "var(--skip)"],
-  ];
   return (
-    <div>
-      <div className="flex h-1.5 w-full overflow-hidden rounded-full" style={{ background: "var(--bg-inset)" }}>
-        {segments.map(([key, color]) =>
-          counts[key] > 0 ? (
-            <span
-              key={key}
-              style={{ width: `${(counts[key] / total) * 100}%`, background: color }}
-              title={`${counts[key]} ${BUCKET_LABEL[key]}`}
-            />
-          ) : null
-        )}
-      </div>
+    <div className="flex h-1.5 w-full overflow-hidden rounded-full" style={{ background: "var(--bg-inset)" }}>
+      {BUCKET_SEGMENTS.map(([key, color]) =>
+        counts[key as keyof typeof counts] > 0 ? (
+          <motion.span
+            key={key}
+            initial={animate ? { width: 0 } : false}
+            animate={{ width: `${(counts[key as keyof typeof counts] / total) * 100}%` }}
+            transition={{ duration: 0.5, delay: 0.15, ease: "easeOut" }}
+            style={{ background: color }}
+            title={`${counts[key as keyof typeof counts]} ${BUCKET_LABEL[key]}`}
+          />
+        ) : null
+      )}
     </div>
+  );
+}
+
+/**
+ * A cursor-tracked spotlight + gentle 3D tilt — plain mouse-move state, no
+ * framer-motion springs needed. Reduced-motion candidates get a flat card
+ * with none of this (handleMove/reset just never fire).
+ */
+function CandidateCard({
+  candidate,
+  index,
+  reduceMotion,
+  onSelect,
+}: {
+  candidate: Candidate;
+  index: number;
+  reduceMotion: boolean | null;
+  onSelect: (c: Candidate) => void;
+}) {
+  const [tilt, setTilt] = useState({ rx: 0, ry: 0, mx: 50, my: 50, active: false });
+  const frame = useRef<number | null>(null);
+
+  function handleMove(e: React.MouseEvent<HTMLButtonElement>) {
+    if (reduceMotion) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width;
+    const py = (e.clientY - rect.top) / rect.height;
+    if (frame.current) cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      setTilt({ rx: (0.5 - py) * 8, ry: (px - 0.5) * 8, mx: px * 100, my: py * 100, active: true });
+    });
+  }
+  function resetTilt() {
+    setTilt((t) => ({ ...t, rx: 0, ry: 0, active: false }));
+  }
+
+  const counts = summarizeCandidate(candidate);
+  const profile = PROFILE_LABEL[dominantBucket(counts)];
+
+  return (
+    <motion.li
+      initial={reduceMotion ? false : { opacity: 0, y: 14, rotateX: -10 }}
+      animate={{ opacity: 1, y: 0, rotateX: 0 }}
+      transition={{ delay: reduceMotion ? 0 : index * 0.05, duration: 0.35, ease: "easeOut" }}
+      style={{ perspective: 700 }}
+    >
+      <button
+        type="button"
+        onClick={() => onSelect(candidate)}
+        onMouseMove={handleMove}
+        onMouseLeave={resetTilt}
+        className="w-full text-left rounded-lg border p-4 cursor-pointer relative overflow-hidden focus-visible:border-[var(--accent-2)]"
+        style={{
+          background: "var(--bg-inset)",
+          borderColor: tilt.active ? "var(--accent-2)" : "var(--border)",
+          transform: `perspective(700px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) translateZ(0) ${
+            tilt.active ? "scale(1.015)" : "scale(1)"
+          }`,
+          transition: tilt.active ? "border-color 150ms ease-out, box-shadow 150ms ease-out" : "transform 300ms ease-out, border-color 200ms ease-out, box-shadow 200ms ease-out",
+          boxShadow: tilt.active ? "var(--shadow), 0 8px 20px -8px rgba(0,0,0,0.25)" : "var(--shadow)",
+        }}
+      >
+        {!reduceMotion && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200"
+            style={{
+              opacity: tilt.active ? 1 : 0,
+              background: `radial-gradient(220px circle at ${tilt.mx}% ${tilt.my}%, color-mix(in srgb, var(--accent-2) 12%, transparent), transparent 70%)`,
+            }}
+          />
+        )}
+        <div className="relative">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="font-medium text-sm" style={{ color: "var(--fg)" }}>
+              {candidate.member.name}
+            </span>
+            <span className="mono text-[11px]" style={{ color: "var(--fg-dim)" }}>
+              {candidate.member.id}
+            </span>
+          </div>
+          <div className="text-xs mt-0.5 flex items-center gap-1.5 flex-wrap" style={{ color: "var(--fg-dim)" }}>
+            <span>
+              {candidate.member.jobRole} · {candidate.member.yearsExperience}y exp
+            </span>
+            <span
+              className="mono text-[9px] rounded-full border px-1.5 py-0.5"
+              style={{ borderColor: "var(--border)", color: "var(--fg-dim)" }}
+            >
+              {profile}
+            </span>
+          </div>
+          <div className="mt-3">
+            <BucketBar candidate={candidate} animate={!reduceMotion} />
+            <div className="mt-1.5 flex justify-between mono text-[10px]" style={{ color: "var(--fg-dim)" }}>
+              <span>{candidate.signals.missionsCompleted} missions</span>
+              <span>{candidate.signals.commitDays} commit days</span>
+              <span>{candidate.signals.missionsFirstTry} first-try</span>
+            </div>
+          </div>
+        </div>
+      </button>
+    </motion.li>
   );
 }
 
@@ -77,41 +193,7 @@ export function CandidatePicker({ onSelect }: { onSelect: (candidate: Candidate)
 
       <ul className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
         {sampleCandidates.map((candidate, i) => (
-          <motion.li
-            key={candidate.member.id}
-            initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            whileHover={reduceMotion ? undefined : { y: -3 }}
-            whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-            transition={{ delay: reduceMotion ? 0 : i * 0.03, duration: 0.25 }}
-          >
-            <button
-              type="button"
-              onClick={() => onSelect(candidate)}
-              className="w-full text-left rounded-lg border p-4 transition-shadow cursor-pointer hover:border-[var(--accent-2)] hover:shadow-md focus-visible:border-[var(--accent-2)]"
-              style={{ background: "var(--bg-inset)", borderColor: "var(--border)" }}
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="font-medium text-sm" style={{ color: "var(--fg)" }}>
-                  {candidate.member.name}
-                </span>
-                <span className="mono text-[11px]" style={{ color: "var(--fg-dim)" }}>
-                  {candidate.member.id}
-                </span>
-              </div>
-              <div className="text-xs mt-0.5" style={{ color: "var(--fg-dim)" }}>
-                {candidate.member.jobRole} · {candidate.member.yearsExperience}y exp
-              </div>
-              <div className="mt-3">
-                <BucketBar candidate={candidate} />
-                <div className="mt-1.5 flex justify-between mono text-[10px]" style={{ color: "var(--fg-dim)" }}>
-                  <span>{candidate.signals.missionsCompleted} missions</span>
-                  <span>{candidate.signals.commitDays} commit days</span>
-                  <span>{candidate.signals.missionsFirstTry} first-try</span>
-                </div>
-              </div>
-            </button>
-          </motion.li>
+          <CandidateCard key={candidate.member.id} candidate={candidate} index={i} reduceMotion={reduceMotion} onSelect={onSelect} />
         ))}
       </ul>
 

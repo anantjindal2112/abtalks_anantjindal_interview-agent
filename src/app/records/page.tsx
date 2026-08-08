@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { TerminalShell } from "@/components/TerminalShell";
+import { DashboardButton } from "@/components/DashboardButton";
 import { DURATION } from "@/lib/motion";
 import type { CategoryScores, Feedback } from "@/lib/types";
 
@@ -65,9 +66,12 @@ export default function RecordsPage() {
           <Link href="/" className="mono text-sm font-semibold" style={{ color: "var(--fg)" }}>
             interview_agent
           </Link>
-          <span className="mono text-xs" style={{ color: "var(--fg-dim)" }}>
-            cohort insights · demo/judge view
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="mono text-xs" style={{ color: "var(--fg-dim)" }}>
+              cohort insights · demo/judge view
+            </span>
+            <DashboardButton />
+          </div>
         </div>
 
         <TerminalShell title="insights@ai-cohort:~/records$">

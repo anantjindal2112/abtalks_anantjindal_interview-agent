@@ -6,6 +6,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { DURATION, EASE_OUT } from "@/lib/motion";
 import { Hero } from "@/components/Hero";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { DashboardButton } from "@/components/DashboardButton";
 import { CandidatePicker } from "@/components/CandidatePicker";
 import { CandidateIntelligence } from "@/components/CandidateIntelligence";
 import { InterviewChat } from "@/components/InterviewChat";
@@ -61,6 +62,7 @@ export default function Home() {
             </span>
           </div>
           <div className="flex items-center gap-3">
+            {stage.name !== "select" && <DashboardButton onClick={() => setStage({ name: "select" })} />}
             <Link href="/records" className="mono text-xs hover:underline" style={{ color: "var(--fg-dim)" }}>
               cohort insights →
             </Link>

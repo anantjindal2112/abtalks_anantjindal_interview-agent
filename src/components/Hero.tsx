@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { DURATION, EASE_OUT } from "@/lib/motion";
 
 const COMMAND = "npx interview_agent --cohort=ai-cohort --candidate=next";
 
@@ -31,23 +32,107 @@ const FEATURES = [
     icon: "◆",
     title: "Grounded in real history",
     desc: "Topics are chosen from what each candidate actually passed, struggled with, or skipped — not a fixed script.",
+    example:
+      "e.g. a candidate who passed \"Embeddings\" first-try but needed 4 attempts on \"Prompt Engineering\" opens on the struggle, not the easy win.",
   },
   {
     icon: "↳",
     title: "Adaptive follow-ups",
     desc: "The model decides whether to probe deeper on an answer or move on, reacting to what was actually said.",
+    example:
+      "e.g. a vague answer gets decision: CLARIFY and a sharper same-topic question — not a polite \"great, thanks!\" and a scripted next question.",
   },
   {
     icon: "✓",
     title: "Guaranteed coverage",
     desc: "≥8 questions across ≥4 curriculum days is enforced in code, never left to the model's discretion.",
+    example:
+      "e.g. if the model tries to wrap up early, route.ts force-overrides it to next_topic until the minimum is actually met — every time.",
   },
   {
     icon: "▤",
     title: "Structured feedback",
     desc: "Every interview ends with a grounded summary, strengths, gaps, and concrete next steps.",
+    example:
+      "e.g. 5 category scores + real misconceptions only — a field the model didn't confidently return is dropped, never faked to look complete.",
   },
 ];
+
+function FeatureCard({
+  f,
+  index,
+  reduceMotion,
+}: {
+  f: (typeof FEATURES)[number];
+  index: number;
+  reduceMotion: boolean | null;
+}) {
+  const [flipped, setFlipped] = useState(false);
+  const faceStyle: React.CSSProperties = { backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
+
+  return (
+    <motion.div
+      initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: reduceMotion ? 0 : 0.15 + index * 0.06, duration: 0.25 }}
+      style={{ perspective: 900 }}
+    >
+      <button
+        type="button"
+        onClick={() => setFlipped((v) => !v)}
+        aria-pressed={flipped}
+        aria-label={`${f.title} — click to ${flipped ? "show description" : "show a concrete example"}`}
+        className="w-full text-left cursor-pointer block"
+        style={{ minHeight: 118 }}
+      >
+        <motion.div
+          className="relative w-full h-full"
+          animate={{ rotateY: flipped ? 180 : 0 }}
+          transition={{ duration: reduceMotion ? 0 : DURATION.card * 1.8, ease: EASE_OUT }}
+          style={{ transformStyle: "preserve-3d", minHeight: 118 }}
+        >
+          {/* front */}
+          <div
+            className="absolute inset-0 rounded-lg border p-3.5 flex flex-col"
+            style={{ borderColor: "var(--border)", background: "var(--bg-inset)", ...faceStyle }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="mono text-base" style={{ color: "var(--accent-2)" }} aria-hidden>
+                {f.icon}
+              </div>
+              <span className="mono text-[9px] shrink-0" style={{ color: "var(--fg-dim)", opacity: 0.55 }} aria-hidden>
+                flip ⟳
+              </span>
+            </div>
+            <div className="mt-1.5 text-sm font-medium" style={{ color: "var(--fg)" }}>
+              {f.title}
+            </div>
+            <div className="mt-1 text-xs leading-relaxed" style={{ color: "var(--fg-dim)" }}>
+              {f.desc}
+            </div>
+          </div>
+          {/* back */}
+          <div
+            className="absolute inset-0 rounded-lg border p-3.5 flex flex-col"
+            style={{
+              borderColor: "var(--accent-2)",
+              background: "var(--bg-inset)",
+              transform: "rotateY(180deg)",
+              ...faceStyle,
+            }}
+          >
+            <div className="mono text-[9px] uppercase tracking-wide" style={{ color: "var(--accent-2)" }} aria-hidden>
+              example
+            </div>
+            <div className="mt-1.5 text-xs leading-relaxed" style={{ color: "var(--fg)" }}>
+              {f.example}
+            </div>
+          </div>
+        </motion.div>
+      </button>
+    </motion.div>
+  );
+}
 
 export function Hero({ onViewSample }: { onViewSample: () => void }) {
   const reduceMotion = useReducedMotion();
@@ -73,24 +158,7 @@ export function Hero({ onViewSample }: { onViewSample: () => void }) {
 
         <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {FEATURES.map((f, i) => (
-            <motion.div
-              key={f.title}
-              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: reduceMotion ? 0 : 0.15 + i * 0.06, duration: 0.25 }}
-              className="rounded-lg border p-3.5"
-              style={{ borderColor: "var(--border)", background: "var(--bg-inset)" }}
-            >
-              <div className="mono text-base" style={{ color: "var(--accent-2)" }} aria-hidden>
-                {f.icon}
-              </div>
-              <div className="mt-1.5 text-sm font-medium" style={{ color: "var(--fg)" }}>
-                {f.title}
-              </div>
-              <div className="mt-1 text-xs leading-relaxed" style={{ color: "var(--fg-dim)" }}>
-                {f.desc}
-              </div>
-            </motion.div>
+            <FeatureCard key={f.title} f={f} index={i} reduceMotion={reduceMotion} />
           ))}
         </div>
 

@@ -6,6 +6,7 @@ import { TerminalShell } from "./TerminalShell";
 import { RadarChart } from "./RadarChart";
 import { CategoryScoreBars } from "./CategoryScoreBars";
 import { MasteryHeatmap } from "./MasteryHeatmap";
+import { JudgeMode } from "./JudgeMode";
 import { DURATION } from "@/lib/motion";
 import type { TurnEvaluation } from "./RoadmapTrail";
 import type { Candidate, Feedback } from "@/lib/types";
@@ -123,6 +124,10 @@ export function FeedbackReport({
   const reduceMotion = useReducedMotion();
   const [copied, setCopied] = useState(false);
   const [evaluations, setEvaluations] = useState<TurnEvaluation[]>(sampleEvaluations ?? []);
+  // Judge Mode was live-only before — every turn's real decision/reasoning/
+  // assessment is already fetched for the heatmap below, so just also let the
+  // candidate's full report expose it instead of throwing it away after use.
+  const [judgeOpen, setJudgeOpen] = useState(false);
 
   // Free GET, no Groq call — same evaluations trail Judge Mode used during
   // the interview, fetched once here to build the mastery heatmap honestly
@@ -215,6 +220,34 @@ export function FeedbackReport({
                   </motion.li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {evaluations.length > 0 && (
+            <div className="pt-4 border-t" style={{ borderColor: "var(--border)" }}>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h3 className="mono text-xs uppercase tracking-wide" style={{ color: "var(--fg-dim)" }}>
+                  interview transcript &amp; reasoning
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setJudgeOpen((v) => !v)}
+                  aria-pressed={judgeOpen}
+                  className="mono text-[11px] rounded-full border px-2.5 py-1 cursor-pointer transition-colors"
+                  style={{
+                    borderColor: judgeOpen ? "var(--accent-2)" : "var(--border)",
+                    color: judgeOpen ? "var(--accent-2)" : "var(--fg-dim)",
+                  }}
+                >
+                  {judgeOpen ? "✓ judge mode" : "judge mode"} · {evaluations.length} question{evaluations.length === 1 ? "" : "s"}
+                </button>
+              </div>
+              <p className="mt-1 text-xs" style={{ color: "var(--fg-dim)" }}>
+                Every question this interview actually asked, why it asked it, and how the answer was scored — the
+                same live Judge Mode trail from the interview, kept here so it isn&apos;t thrown away once the chat
+                closes.
+              </p>
+              <JudgeMode evaluations={evaluations} open={judgeOpen} />
             </div>
           )}
 
