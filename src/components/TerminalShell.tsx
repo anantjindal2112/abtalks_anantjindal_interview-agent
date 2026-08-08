@@ -2,10 +2,12 @@ export function TerminalShell({
   title,
   children,
   footer,
+  action,
 }: {
   title: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  action?: React.ReactNode;
 }) {
   return (
     <div
@@ -24,6 +26,7 @@ export function TerminalShell({
         <span className="mono text-xs truncate" style={{ color: "var(--fg-dim)" }}>
           {title}
         </span>
+        {action && <span className="ml-auto shrink-0">{action}</span>}
       </div>
       <div className="flex-1 min-h-0 flex flex-col">{children}</div>
       {footer}

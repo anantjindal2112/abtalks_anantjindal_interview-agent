@@ -30,6 +30,15 @@ export function RoadmapTrail({ plan, progress }: { plan: PlanTopic[]; progress: 
         <p className="mono text-[11px] mt-1" style={{ color: "var(--fg-dim)" }}>
           question {progress?.questionsAsked ?? 0} · {progress?.daysCovered.length ?? 0} days covered
         </p>
+        <div className="mt-2 h-1 w-full overflow-hidden rounded-full" style={{ background: "var(--bg-inset)" }}>
+          <motion.div
+            className="h-full rounded-full"
+            style={{ background: "var(--accent)" }}
+            initial={false}
+            animate={{ width: `${plan.length ? (activeIndex / Math.max(1, plan.length - 1)) * 100 : 0}%` }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.4 }}
+          />
+        </div>
       </div>
 
       <ol className="flex flex-col gap-1" aria-label="Interview topic plan">

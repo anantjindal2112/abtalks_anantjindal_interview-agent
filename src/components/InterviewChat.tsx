@@ -45,6 +45,32 @@ function ThinkingIndicator() {
   );
 }
 
+/** Reveals interviewer text word-by-word so each new question visibly "types
+ * in" instead of just appearing — reads as more alive during the real 5-30s
+ * gap since the last message. Total reveal time is capped so long answers
+ * don't drag; skipped entirely when the user prefers reduced motion. */
+function TypewriterText({ text }: { text: string }) {
+  const reduceMotion = useReducedMotion();
+  const words = useMemo(() => text.split(" "), [text]);
+  const [shown, setShown] = useState(reduceMotion ? words.length : 0);
+
+  useEffect(() => {
+    if (reduceMotion || shown >= words.length) return;
+    const perWord = Math.min(45, Math.max(12, 900 / words.length));
+    const id = setTimeout(() => setShown((n) => n + 1), perWord);
+    return () => clearTimeout(id);
+  }, [shown, words.length, reduceMotion]);
+
+  return (
+    <>
+      {words.slice(0, shown).join(" ")}
+      {shown < words.length && (
+        <span aria-hidden className="inline-block w-[0.5ch] h-[1em] align-text-bottom animate-pulse" style={{ background: "var(--accent-2)" }} />
+      )}
+    </>
+  );
+}
+
 function Bubble({ message }: { message: Message }) {
   const reduceMotion = useReducedMotion();
   const isInterviewer = message.role === "interviewer";
@@ -67,7 +93,7 @@ function Bubble({ message }: { message: Message }) {
             border: isInterviewer ? "1px solid var(--border)" : "none",
           }}
         >
-          {message.content}
+          {isInterviewer ? <TypewriterText text={message.content} /> : message.content}
         </div>
       </div>
     </motion.div>
@@ -161,8 +187,39 @@ export function InterviewChat({
     }
   }
 
+  const [copiedId, setCopiedId] = useState(false);
+  async function copySessionId() {
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setCopiedId(true);
+      setTimeout(() => setCopiedId(false), 1500);
+    } catch {
+      // clipboard permission denied — non-critical
+    }
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4">
+      <div className="flex items-center justify-between mb-1 px-1">
+        <div>
+          <span className="text-sm font-medium" style={{ color: "var(--fg)" }}>
+            {candidate.member.name}
+          </span>
+          <span className="text-xs ml-2" style={{ color: "var(--fg-dim)" }}>
+            {candidate.member.jobRole}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={copySessionId}
+          className="mono text-[11px] rounded border px-2 py-0.5 cursor-pointer hover:border-[var(--accent-2)]"
+          style={{ borderColor: "var(--border)", color: "var(--fg-dim)" }}
+          title="Copy session ID"
+        >
+          {copiedId ? "✓ copied" : `id: ${sessionId.slice(0, 8)}`}
+        </button>
+      </div>
+      <div className="hidden lg:block" aria-hidden />
       <TerminalShell title={`interviewer@ai-cohort:~/session/${sessionId.slice(0, 8)}$`}>
         <div
           ref={scrollRef}

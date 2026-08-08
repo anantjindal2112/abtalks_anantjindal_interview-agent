@@ -1,8 +1,29 @@
 "use client";
 
+import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { TerminalShell } from "./TerminalShell";
 import type { Candidate, Feedback } from "@/lib/types";
+
+function toMarkdown(candidate: Candidate, feedback: Feedback): string {
+  const list = (items: string[]) => (items.length ? items.map((i) => `- ${i}`).join("\n") : "- (none)");
+  return `# Interview Feedback — ${candidate.member.name}
+
+**Role:** ${candidate.member.jobRole} (${candidate.member.yearsExperience}y exp)
+
+## Summary
+${feedback.summary}
+
+## Strengths
+${list(feedback.strengths)}
+
+## Gaps
+${list(feedback.gaps)}
+
+## Next steps
+${list(feedback.next)}
+`;
+}
 
 function Section({
   title,
@@ -55,6 +76,28 @@ export function FeedbackReport({
   onRestart: () => void;
 }) {
   const reduceMotion = useReducedMotion();
+  const [copied, setCopied] = useState(false);
+
+  async function copyMarkdown() {
+    try {
+      await navigator.clipboard.writeText(toMarkdown(candidate, feedback));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // clipboard permission denied — non-critical, user can still use download
+    }
+  }
+
+  function downloadReport() {
+    const blob = new Blob([toMarkdown(candidate, feedback)], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${candidate.member.id}-interview-feedback.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <motion.div
       initial={reduceMotion ? false : { opacity: 0, y: 10 }}
@@ -81,7 +124,7 @@ export function FeedbackReport({
             <Section title="Next steps" icon="→" color="var(--accent-2)" items={feedback.next} delayBase={0.3} />
           </div>
 
-          <div className="pt-2 border-t" style={{ borderColor: "var(--border)" }}>
+          <div className="pt-2 border-t flex flex-wrap gap-2" style={{ borderColor: "var(--border)" }}>
             <button
               type="button"
               onClick={onRestart}
@@ -89,6 +132,22 @@ export function FeedbackReport({
               style={{ borderColor: "var(--border)", color: "var(--fg)" }}
             >
               ← Interview another candidate
+            </button>
+            <button
+              type="button"
+              onClick={copyMarkdown}
+              className="mt-4 rounded-md px-4 py-2 text-sm font-medium border cursor-pointer"
+              style={{ borderColor: "var(--border)", color: "var(--fg)" }}
+            >
+              {copied ? "✓ copied" : "Copy as Markdown"}
+            </button>
+            <button
+              type="button"
+              onClick={downloadReport}
+              className="mt-4 rounded-md px-4 py-2 text-sm font-medium border cursor-pointer"
+              style={{ borderColor: "var(--border)", color: "var(--fg)" }}
+            >
+              ↓ Download .md
             </button>
           </div>
         </div>

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { Hero } from "@/components/Hero";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { CandidatePicker } from "@/components/CandidatePicker";
 import { InterviewChat } from "@/components/InterviewChat";
 import { FeedbackReport } from "@/components/FeedbackReport";
@@ -29,46 +31,81 @@ export default function Home() {
           initial={reduceMotion ? false : { opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="mb-6 flex items-baseline gap-2"
+          className="mb-6 flex items-baseline justify-between gap-2"
         >
-          <span className="mono text-sm font-semibold" style={{ color: "var(--fg)" }}>
-            interview_agent
-          </span>
-          <span className="mono text-xs" style={{ color: "var(--fg-dim)" }}>
-            · AI Cohort · main
-          </span>
+          <div className="flex items-baseline gap-2">
+            <button
+              type="button"
+              className="mono text-sm font-semibold cursor-pointer"
+              style={{ color: "var(--fg)" }}
+              onClick={() => setStage({ name: "select" })}
+            >
+              interview_agent
+            </button>
+            <span className="mono text-xs" style={{ color: "var(--fg-dim)" }}>
+              · AI Cohort · main
+            </span>
+          </div>
+          <ThemeToggle />
         </motion.header>
 
-        {stage.name === "select" && (
-          <div className="rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}>
-            <CandidatePicker
-              onSelect={(candidate) =>
-                setStage({
-                  name: "interview",
-                  candidate,
-                  sessionId: crypto.randomUUID(),
-                })
-              }
-            />
-          </div>
-        )}
+        {stage.name === "select" && <Hero />}
 
-        {stage.name === "interview" && (
-          <InterviewChat
-            key={stage.sessionId}
-            candidate={stage.candidate}
-            sessionId={stage.sessionId}
-            onComplete={(feedback) => setStage({ name: "done", candidate: stage.candidate, feedback })}
-          />
-        )}
+        <AnimatePresence mode="wait">
+          {stage.name === "select" && (
+            <motion.div
+              key="select"
+              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduceMotion ? undefined : { opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="rounded-xl border"
+              style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
+            >
+              <CandidatePicker
+                onSelect={(candidate) =>
+                  setStage({
+                    name: "interview",
+                    candidate,
+                    sessionId: crypto.randomUUID(),
+                  })
+                }
+              />
+            </motion.div>
+          )}
 
-        {stage.name === "done" && (
-          <FeedbackReport
-            candidate={stage.candidate}
-            feedback={stage.feedback}
-            onRestart={() => setStage({ name: "select" })}
-          />
-        )}
+          {stage.name === "interview" && (
+            <motion.div
+              key={stage.sessionId}
+              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduceMotion ? undefined : { opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <InterviewChat
+                candidate={stage.candidate}
+                sessionId={stage.sessionId}
+                onComplete={(feedback) => setStage({ name: "done", candidate: stage.candidate, feedback })}
+              />
+            </motion.div>
+          )}
+
+          {stage.name === "done" && (
+            <motion.div
+              key="done"
+              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduceMotion ? undefined : { opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <FeedbackReport
+                candidate={stage.candidate}
+                feedback={stage.feedback}
+                onRestart={() => setStage({ name: "select" })}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <footer className="mt-8 text-center mono text-[11px]" style={{ color: "var(--fg-dim)" }}>
           Built for the ABTalks Vibe Code Hackathon · candidate & curriculum data are synthetic
