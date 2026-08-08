@@ -66,6 +66,31 @@ export type PlanTopic = {
 
 export type InterviewPhase = "warmup" | "core" | "capstone" | "done";
 
+// --- Answer assessment + adaptive decision -----------------------------------
+// All optional/best-effort: this rides along on the SAME single per-turn Groq
+// call that already decides follow_up/next_topic/conclude — never a second
+// LLM call. If the model omits it or it fails validation, everything downstream
+// degrades gracefully (no assessment shown, difficulty stays put) rather than
+// blocking the interview. Never fabricated in the frontend — only ever rendered
+// from what the model actually returned for that specific turn.
+
+export type Assessment = {
+  correctness: number; // 1-10, of the candidate's most recent answer
+  depth: number; // 1-10
+  missingConcepts: string[];
+  misconception: string | null;
+};
+
+export const DECISION_LABELS = [
+  "DEEPEN",
+  "CHALLENGE",
+  "CLARIFY",
+  "SWITCH_TOPIC",
+  "VERIFY_MISCONCEPTION",
+  "CONCLUDE",
+] as const;
+export type DecisionLabel = (typeof DECISION_LABELS)[number];
+
 // --- Conversation -----------------------------------------------------------
 
 export type TurnRole = "interviewer" | "candidate";
@@ -78,6 +103,10 @@ export type TranscriptTurn = {
     day: number;
     topicTitle: string;
     isFollowUp: boolean;
+    assessment?: Assessment; // evaluation of the answer that led to THIS turn
+    reasoning?: string; // short rationale for why this question/action was chosen
+    decisionLabel?: DecisionLabel;
+    difficulty?: number; // 1-5, current level after this decision
   };
 };
 
@@ -91,6 +120,7 @@ export type SessionState = {
   questionsAsked: number;
   daysCovered: number[];
   phase: InterviewPhase;
+  difficulty: number; // 1-5, adjusted from assessment signal each turn
   createdAt: number;
   feedback?: Feedback; // cached once the interview concludes, so repeat calls don't re-generate
 };
@@ -109,11 +139,23 @@ export type TurnRequestBody = {
 
 export type InterviewRequestBody = StartRequestBody | TurnRequestBody;
 
+export type CategoryScores = {
+  technicalKnowledge: number; // 0-100
+  engineeringReasoning: number;
+  systemDesign: number;
+  communication: number;
+  productionAwareness: number;
+};
+
 export type Feedback = {
   summary: string;
   strengths: string[];
   gaps: string[];
   next: string[];
+  // Best-effort, optional — same single feedback call, not a second one.
+  // Rendered only when present; nothing downstream assumes they exist.
+  categoryScores?: CategoryScores;
+  misconceptions?: string[];
 };
 
 export type InterviewResponse =

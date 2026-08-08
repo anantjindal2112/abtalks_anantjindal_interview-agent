@@ -40,15 +40,31 @@ ${plan.map((t, i) => `${i + 1}. ${DAY_BLOCK(t)}`).join("\n")}
 
 RULES FOR EVERY TURN
 You will be told the current topic, how many follow-ups you've already asked on it, how many questions you've asked in total, and how many distinct days you've covered. You must respond with STRICT JSON only, no markdown fences, no commentary outside the JSON, matching exactly:
-{"action": "follow_up" | "next_topic" | "conclude", "reply": "..."}
+{"action": "follow_up" | "next_topic" | "conclude", "reply": "...", "decision": "DEEPEN" | "CHALLENGE" | "CLARIFY" | "VERIFY_MISCONCEPTION" | "SWITCH_TOPIC" | "CONCLUDE", "reasoning": "...", "assessment": {"correctness": 1-10, "depth": 1-10, "missingConcepts": ["..."], "misconception": "..." or null} or null}
 
-- "follow_up": the candidate's last answer left something worth digging into — it was vague, incomplete, surprising, **technically wrong**, or rich enough to go one level deeper. A wrong or shaky answer is exactly when you should follow up, not skip past. Ask ONE sharper question about the SAME topic, referencing something specific they just said (if it was wrong, you can ask them to reconsider or clarify without simply announcing "that's incorrect"). Never use follow_up if you're already at the follow-up limit for this topic — you'll be told when you are.
-- "next_topic": move on. Give a brief, natural one-clause transition (not "Moving on to topic 2" — talk like a human), then ask the question for the next topic in the plan.
-- "conclude": end the interview. Only ever choose this when you are explicitly told it's allowed. When you do, "reply" is a short, warm closing line (no new question) telling them the interview is complete and feedback is on its way.
+- "action" — the coarse control signal (this is what actually governs interview flow, so get it right):
+  - "follow_up": the candidate's last answer left something worth digging into — it was vague, incomplete, surprising, **technically wrong**, or rich enough to go one level deeper. A wrong or shaky answer is exactly when you should follow up, not skip past. Ask ONE sharper question about the SAME topic, referencing something specific they just said (if it was wrong, you can ask them to reconsider or clarify without simply announcing "that's incorrect"). Never use follow_up if you're already at the follow-up limit for this topic — you'll be told when you are.
+  - "next_topic": move on. Give a brief, natural one-clause transition (not "Moving on to topic 2" — talk like a human), then ask the question for the next topic in the plan.
+  - "conclude": end the interview. Only ever choose this when you are explicitly told it's allowed. When you do, "reply" is a short, warm closing line (no new question) telling them the interview is complete and feedback is on its way.
+
+- "decision" — the specific reason behind that action, must be consistent with it:
+  - DEEPEN (pairs with follow_up): answer was solid but shallow — go one level deeper on the same idea.
+  - CHALLENGE (pairs with follow_up): answer was correct and complete — push with a harder edge case or scenario to find the boundary of their understanding.
+  - CLARIFY (pairs with follow_up): answer was vague or ambiguous — ask them to be concrete.
+  - VERIFY_MISCONCEPTION (pairs with follow_up): you suspect a specific wrong mental model in their answer — probe directly to confirm or refute it.
+  - SWITCH_TOPIC (pairs with next_topic): moving to the next planned topic.
+  - CONCLUDE (pairs with conclude): ending the interview.
+
+- "reasoning": ONE short sentence, internal only (never shown to the candidate), explaining why you picked that decision — e.g. "Correctly explained retrieval but didn't mention reranking — testing whether that's a genuine gap."
+
+- "assessment": your honest evaluation of the candidate's MOST RECENT answer. Use null ONLY on the very first message of the interview, before they have answered anything — every turn after that must include a real assessment of what they just said, even if you choose next_topic (assess the answer, then still decide it's time to move on regardless of how it scored):
+  - correctness (1-10) and depth (1-10): your honest technical judgment, not inflated.
+  - missingConcepts: specific concepts they should have mentioned but didn't (empty array if none — do not pad this list).
+  - misconception: if their answer implied a genuinely incorrect mental model (not just missing detail), name it in one short phrase (e.g. "treats embeddings as guaranteeing semantic correctness"); otherwise null. Only flag a REAL misconception you can defend, never invent one to fill the field.
 
 Vary your phrasing. Each topic lists a suggested angle — use it, or a different one if the conversation naturally calls for it, but never fall back to the flattest, most generic textbook phrasing of a question ("Can you explain X?" every single time). Two different interviews about the same topic should not read like they used the same script.
 
-"reply" is exactly what gets shown to the candidate — never include the action, labels, scoring, or meta-commentary inside it.`;
+"reply" is exactly what gets shown to the candidate — never include the action, decision, reasoning, assessment, scoring, or any meta-commentary inside it.`;
 }
 
 export function buildStateBlock(session: SessionState): string {
@@ -89,7 +105,7 @@ export function buildOpeningStateBlock(session: SessionState): string {
   const topic = session.plan[0];
   return `CURRENT STATE
 This is the very first message of the interview. The candidate has not answered anything yet.
-Task: respond with action "next_topic". In "reply": greet ${session.candidate.member.name} by first name, briefly (1 sentence) explain this will be a short conversational technical interview about their work in the cohort, then ask ONE opening question about Day ${topic.day} — "${topic.title}" [${topic.bucket}] — ${topic.reason}. Suggested angle: ${topic.angle} — use it as a starting point, but phrase the question in your own words; do not default to the most generic textbook version of this question. Keep the whole message under ~5 sentences total.
+Task: respond with action "next_topic", decision "SWITCH_TOPIC", assessment null (nothing to assess yet), and a one-sentence reasoning like "Opening on their strongest first-try topic to build rapport." In "reply": greet ${session.candidate.member.name} by first name, briefly (1 sentence) explain this will be a short conversational technical interview about their work in the cohort, then ask ONE opening question about Day ${topic.day} — "${topic.title}" [${topic.bucket}] — ${topic.reason}. Suggested angle: ${topic.angle} — use it as a starting point, but phrase the question in your own words; do not default to the most generic textbook version of this question. Keep the whole message under ~5 sentences total.
 
 Now respond with the single JSON object described in the system message — nothing else.`;
 }
@@ -108,6 +124,15 @@ Respond with STRICT JSON only, no markdown fences, matching exactly:
   "summary": "2-4 sentence overall assessment of their technical communication and depth, written directly about them",
   "strengths": ["3-5 concise, specific, actionable points — reference actual topics/answers"],
   "gaps": ["2-4 concise, specific, actionable points — reference actual topics/answers, be honest but constructive"],
-  "next": ["2-4 concise, concrete next steps for their continued learning, tied to the gaps above"]
-}`;
+  "next": ["2-4 concise, concrete next steps for their continued learning, tied to the gaps above"],
+  "categoryScores": {
+    "technicalKnowledge": 0-100,
+    "engineeringReasoning": 0-100,
+    "systemDesign": 0-100,
+    "communication": 0-100,
+    "productionAwareness": 0-100
+  },
+  "misconceptions": ["0-3 genuinely incorrect mental models they displayed, each as: what they implied, and why it's incomplete or wrong — in one sentence. Empty array if none surfaced — do not invent one to fill this."]
+}
+Score every category honestly from the transcript — if a category was barely touched (e.g. no system design question came up), score it conservatively rather than guessing high, and it's fine for categories to differ significantly from each other.`;
 }

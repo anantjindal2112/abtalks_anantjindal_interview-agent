@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
-import type { SessionState, TranscriptTurn } from "./types";
+import { DECISION_LABELS } from "./types";
+import type { Assessment, CategoryScores, DecisionLabel, SessionState, TranscriptTurn } from "./types";
 import {
   buildFeedbackPrompt,
   buildOpeningStateBlock,
@@ -72,10 +73,21 @@ function safeParseJson<T>(raw: string): T | null {
 export type TurnDecision = {
   action: "follow_up" | "next_topic" | "conclude";
   reply: string;
+  decision?: DecisionLabel;
+  reasoning?: string;
+  assessment?: Assessment | null;
 };
 
 const VALID_ACTIONS = new Set(["follow_up", "next_topic", "conclude"]);
 
+/**
+ * Only `action` + `reply` are load-bearing (they drive the guardrail state
+ * machine in route.ts) — validated strictly. `decision`/`reasoning`/
+ * `assessment` are best-effort intelligence data riding along on the same
+ * call; validated leniently (present + roughly right shape, or dropped) so a
+ * model that gets those extra fields slightly wrong never breaks the
+ * interview itself.
+ */
 function isTurnDecision(x: unknown): x is TurnDecision {
   if (!x || typeof x !== "object") return false;
   const d = x as Record<string, unknown>;
@@ -85,6 +97,32 @@ function isTurnDecision(x: unknown): x is TurnDecision {
     typeof d.action === "string" &&
     VALID_ACTIONS.has(d.action)
   );
+}
+
+function sanitizeDecision(x: unknown): DecisionLabel | undefined {
+  return typeof x === "string" && (DECISION_LABELS as readonly string[]).includes(x) ? (x as DecisionLabel) : undefined;
+}
+
+function sanitizeAssessment(x: unknown): Assessment | null | undefined {
+  if (x === null) return null;
+  if (!x || typeof x !== "object") return undefined;
+  const a = x as Record<string, unknown>;
+  if (typeof a.correctness !== "number" || typeof a.depth !== "number") return undefined;
+  return {
+    correctness: Math.max(1, Math.min(10, a.correctness)),
+    depth: Math.max(1, Math.min(10, a.depth)),
+    missingConcepts: Array.isArray(a.missingConcepts) ? a.missingConcepts.filter((c) => typeof c === "string") : [],
+    misconception: typeof a.misconception === "string" ? a.misconception : null,
+  };
+}
+
+function sanitizeTurnDecision(raw: TurnDecision): TurnDecision {
+  return {
+    ...raw,
+    decision: sanitizeDecision(raw.decision),
+    reasoning: typeof raw.reasoning === "string" ? raw.reasoning.slice(0, 300) : undefined,
+    assessment: sanitizeAssessment(raw.assessment),
+  };
 }
 
 /**
@@ -109,7 +147,7 @@ export async function getNextTurn(session: SessionState, isOpening: boolean): Pr
     // across different interviews. JSON-mode structure isn't affected by this.
     const raw = await callGroq(messages, { temperature: 0.75 });
     const parsed = safeParseJson<TurnDecision>(raw);
-    if (parsed && isTurnDecision(parsed)) return parsed;
+    if (parsed && isTurnDecision(parsed)) return sanitizeTurnDecision(parsed);
   } catch {
     // fall through to deterministic fallback below
   }
@@ -121,6 +159,9 @@ export async function getNextTurn(session: SessionState, isOpening: boolean): Pr
     return {
       action: "next_topic",
       reply: `Hi ${session.candidate.member.name.split(" ")[0]}, thanks for joining. Let's start with your work on "${topic.title}" — walk me through how you approached it.`,
+      decision: "SWITCH_TOPIC",
+      reasoning: "Opening question (fallback path — the model call was unavailable).",
+      assessment: null,
     };
   }
   const nextIndex = session.planIndex + 1;
@@ -129,11 +170,15 @@ export async function getNextTurn(session: SessionState, isOpening: boolean): Pr
     return {
       action: "next_topic",
       reply: `Thanks — let's move on. Tell me about "${next.title}": ${next.curriculumDay?.objectives?.[0] ?? "what did you build and how did it work?"}`,
+      decision: "SWITCH_TOPIC",
+      reasoning: "Advancing to the next topic (fallback path — the model call was unavailable, so no real assessment of the last answer).",
     };
   }
   return {
     action: "conclude",
     reply: "That covers everything I wanted to ask. Thanks for walking me through your work — your feedback is coming up now.",
+    decision: "CONCLUDE",
+    reasoning: "Plan exhausted (fallback path — the model call was unavailable).",
   };
 }
 
@@ -142,13 +187,50 @@ export type FeedbackResult = {
   strengths: string[];
   gaps: string[];
   next: string[];
+  categoryScores?: CategoryScores;
+  misconceptions?: string[];
 };
 
+// Only the four contract-required fields are validated strictly. categoryScores
+// / misconceptions are best-effort extras on the same call — sanitized
+// separately below, dropped (not faked) if the model gets them wrong.
 function isFeedback(x: unknown): x is FeedbackResult {
   if (!x || typeof x !== "object") return false;
   const f = x as Record<string, unknown>;
   const isStrArr = (v: unknown) => Array.isArray(v) && v.every((s) => typeof s === "string");
   return typeof f.summary === "string" && isStrArr(f.strengths) && isStrArr(f.gaps) && isStrArr(f.next);
+}
+
+function sanitizeCategoryScores(x: unknown): CategoryScores | undefined {
+  if (!x || typeof x !== "object") return undefined;
+  const c = x as Record<string, unknown>;
+  const keys: (keyof CategoryScores)[] = [
+    "technicalKnowledge",
+    "engineeringReasoning",
+    "systemDesign",
+    "communication",
+    "productionAwareness",
+  ];
+  const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+  if (!keys.every((k) => typeof c[k] === "number")) return undefined;
+  return {
+    technicalKnowledge: clamp(c.technicalKnowledge as number),
+    engineeringReasoning: clamp(c.engineeringReasoning as number),
+    systemDesign: clamp(c.systemDesign as number),
+    communication: clamp(c.communication as number),
+    productionAwareness: clamp(c.productionAwareness as number),
+  };
+}
+
+function sanitizeFeedback(raw: FeedbackResult): FeedbackResult {
+  const rawObj = raw as unknown as Record<string, unknown>;
+  return {
+    ...raw,
+    categoryScores: sanitizeCategoryScores(rawObj.categoryScores),
+    misconceptions: Array.isArray(rawObj.misconceptions)
+      ? rawObj.misconceptions.filter((m): m is string => typeof m === "string").slice(0, 5)
+      : undefined,
+  };
 }
 
 function fallbackFeedback(session: SessionState): FeedbackResult {
@@ -180,7 +262,7 @@ export async function getFeedback(session: SessionState): Promise<FeedbackResult
   try {
     const raw = await callGroq(messages, { temperature: 0.4 });
     const parsed = safeParseJson<FeedbackResult>(raw);
-    if (parsed && isFeedback(parsed)) return parsed;
+    if (parsed && isFeedback(parsed)) return sanitizeFeedback(parsed);
   } catch {
     // fall through
   }
