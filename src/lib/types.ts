@@ -91,6 +91,7 @@ export type SessionState = {
   daysCovered: number[];
   phase: InterviewPhase;
   createdAt: number;
+  feedback?: Feedback; // cached once the interview concludes, so repeat calls don't re-generate
 };
 
 // --- API contract (must match technical-spec.md exactly) --------------------
