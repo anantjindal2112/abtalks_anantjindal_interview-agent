@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { DURATION, EASE_OUT } from "@/lib/motion";
 import { Hero } from "@/components/Hero";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { CandidatePicker } from "@/components/CandidatePicker";
@@ -59,8 +60,8 @@ export default function Home() {
               key="select"
               initial={reduceMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={reduceMotion ? undefined : { opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              exit={reduceMotion ? undefined : { opacity: 0, y: -8 }}
+              transition={{ duration: DURATION.page, ease: EASE_OUT }}
               className="rounded-xl border"
               style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
             >
@@ -73,8 +74,8 @@ export default function Home() {
               key={`profile-${stage.candidate.member.id}`}
               initial={reduceMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={reduceMotion ? undefined : { opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              exit={reduceMotion ? undefined : { opacity: 0, y: -8 }}
+              transition={{ duration: DURATION.page, ease: EASE_OUT }}
             >
               <CandidateIntelligence
                 candidate={stage.candidate}
@@ -91,8 +92,8 @@ export default function Home() {
               key={stage.sessionId}
               initial={reduceMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={reduceMotion ? undefined : { opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              exit={reduceMotion ? undefined : { opacity: 0, y: -8 }}
+              transition={{ duration: DURATION.page, ease: EASE_OUT }}
             >
               <InterviewChat
                 candidate={stage.candidate}
@@ -107,8 +108,8 @@ export default function Home() {
               key="done"
               initial={reduceMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={reduceMotion ? undefined : { opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              exit={reduceMotion ? undefined : { opacity: 0, y: -8 }}
+              transition={{ duration: DURATION.page, ease: EASE_OUT }}
             >
               <FeedbackReport
                 candidate={stage.candidate}

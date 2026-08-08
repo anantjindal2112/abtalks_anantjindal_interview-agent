@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { TerminalShell } from "./TerminalShell";
 import { RoadmapTrail, type Progress } from "./RoadmapTrail";
 import { buildInterviewPlan } from "@/lib/plan";
+import { DURATION, EASE_OUT } from "@/lib/motion";
 import type { Candidate, Feedback } from "@/lib/types";
 
 type Message = { role: "interviewer" | "candidate"; content: string };
@@ -45,40 +46,14 @@ function ThinkingIndicator() {
   );
 }
 
-/** Reveals interviewer text word-by-word so each new question visibly "types
- * in" instead of just appearing — reads as more alive during the real 5-30s
- * gap since the last message. Total reveal time is capped so long answers
- * don't drag; skipped entirely when the user prefers reduced motion. */
-function TypewriterText({ text }: { text: string }) {
-  const reduceMotion = useReducedMotion();
-  const words = useMemo(() => text.split(" "), [text]);
-  const [shown, setShown] = useState(reduceMotion ? words.length : 0);
-
-  useEffect(() => {
-    if (reduceMotion || shown >= words.length) return;
-    const perWord = Math.min(45, Math.max(12, 900 / words.length));
-    const id = setTimeout(() => setShown((n) => n + 1), perWord);
-    return () => clearTimeout(id);
-  }, [shown, words.length, reduceMotion]);
-
-  return (
-    <>
-      {words.slice(0, shown).join(" ")}
-      {shown < words.length && (
-        <span aria-hidden className="inline-block w-[0.5ch] h-[1em] align-text-bottom animate-pulse" style={{ background: "var(--accent-2)" }} />
-      )}
-    </>
-  );
-}
-
 function Bubble({ message }: { message: Message }) {
   const reduceMotion = useReducedMotion();
   const isInterviewer = message.role === "interviewer";
   return (
     <motion.div
-      initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+      initial={reduceMotion ? false : { opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
+      transition={{ duration: DURATION.question, ease: EASE_OUT }}
       className={`flex ${isInterviewer ? "justify-start" : "justify-end"}`}
     >
       <div className={`max-w-[85%] ${isInterviewer ? "" : "text-right"}`}>
@@ -93,7 +68,7 @@ function Bubble({ message }: { message: Message }) {
             border: isInterviewer ? "1px solid var(--border)" : "none",
           }}
         >
-          {isInterviewer ? <TypewriterText text={message.content} /> : message.content}
+          {message.content}
         </div>
       </div>
     </motion.div>

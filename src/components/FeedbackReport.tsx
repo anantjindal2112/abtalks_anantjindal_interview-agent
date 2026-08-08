@@ -3,8 +3,41 @@
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { TerminalShell } from "./TerminalShell";
-import { Confetti } from "./Confetti";
+import { DURATION } from "@/lib/motion";
 import type { Candidate, Feedback } from "@/lib/types";
+
+/** Restrained completion mark: circle fades in, then the check path draws
+ * itself. No confetti/burst — this is an enterprise technical interview,
+ * not a streak celebration. */
+function CompleteCheck() {
+  const reduceMotion = useReducedMotion();
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" className="inline-block align-middle mr-1.5" aria-hidden>
+      <motion.circle
+        cx="10"
+        cy="10"
+        r="9"
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth="1.5"
+        initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: DURATION.card }}
+      />
+      <motion.path
+        d="M5.5 10.5l3 3 6-6.5"
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        initial={reduceMotion ? false : { pathLength: 0, opacity: 0 }}
+        animate={{ pathLength: 1, opacity: 1 }}
+        transition={{ duration: DURATION.graph, delay: reduceMotion ? 0 : DURATION.card, ease: "easeOut" }}
+      />
+    </svg>
+  );
+}
 
 function toMarkdown(candidate: Candidate, feedback: Feedback): string {
   const list = (items: string[]) => (items.length ? items.map((i) => `- ${i}`).join("\n") : "- (none)");
@@ -103,14 +136,13 @@ export function FeedbackReport({
     <motion.div
       initial={reduceMotion ? false : { opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: DURATION.report }}
     >
       <TerminalShell title={`feedback@ai-cohort:~/report/${candidate.member.id}$`}>
         <div className="p-5 sm:p-6 flex flex-col gap-6">
-          <div className="relative">
-            <Confetti />
-            <div className="mono text-[11px]" style={{ color: "var(--accent)" }}>
-              ✓ interview complete
+          <div>
+            <div className="mono text-[11px] flex items-center" style={{ color: "var(--accent)" }}>
+              <CompleteCheck /> interview complete
             </div>
             <h2 className="text-lg font-semibold mt-1" style={{ color: "var(--fg)" }}>
               {candidate.member.name}
