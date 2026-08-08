@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { DURATION, EASE_OUT } from "@/lib/motion";
 import { Hero } from "@/components/Hero";
@@ -59,7 +60,12 @@ export default function Home() {
               · AI Cohort · main
             </span>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-3">
+            <Link href="/records" className="mono text-xs hover:underline" style={{ color: "var(--fg-dim)" }}>
+              cohort insights →
+            </Link>
+            <ThemeToggle />
+          </div>
         </motion.header>
 
         {stage.name === "select" && (

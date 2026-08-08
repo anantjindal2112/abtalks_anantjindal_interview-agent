@@ -225,6 +225,35 @@ export async function POST(request: Request) {
     });
   }
 
+  // Explicit early-end escape hatch — not advertised to real candidates (no
+  // UI copy tells them this exists), and unreachable by the graded contract
+  // (that only ever sends {sessionId, message}, never this flag). It exists
+  // for testing/demo convenience so a full run doesn't require 8-13 turns
+  // every time. Bypasses the coverage guardrail deliberately — but honestly:
+  // every topic that was never reached gets counted as skipped, so the final
+  // scoring reflects the real incompleteness rather than hiding it.
+  if (b.endEarly === true) {
+    const remainingTopics = session.plan.slice(session.planIndex + 1);
+    session.skipCount += remainingTopics.length;
+    session.transcript.push({
+      role: "interviewer",
+      content: "Understood — ending here. Thanks for the time so far; your feedback is coming up now.",
+    });
+    session.phase = "done";
+    session.completedAt = Date.now();
+    const feedback = await getFeedback(session, {
+      endedEarly: true,
+      unreachedTopics: remainingTopics.map((t) => t.title),
+    });
+    session.feedback = feedback;
+    saveSession(session);
+    return json({
+      reply: "Understood — ending here. Thanks for the time so far; your feedback is coming up now.",
+      done: true,
+      feedback,
+    });
+  }
+
   // A skip is a real interview move ("I don't know, let's move on"), not a
   // free-text answer — the frontend's Skip button sends `skipped: true`
   // rather than trusting arbitrary client text here, so the transcript
@@ -281,6 +310,7 @@ export async function POST(request: Request) {
   // action === "conclude"
   session.transcript.push({ role: "interviewer", content: reply });
   session.phase = "done";
+  session.completedAt = Date.now();
   const feedback = await getFeedback(session);
   session.feedback = feedback;
   saveSession(session);

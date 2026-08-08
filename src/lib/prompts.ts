@@ -114,7 +114,10 @@ Task: respond with action "next_topic", decision "SWITCH_TOPIC", assessment null
 Now respond with the single JSON object described in the system message — nothing else.`;
 }
 
-export function buildFeedbackPrompt(session: SessionState): string {
+export function buildFeedbackPrompt(
+  session: SessionState,
+  earlyEnd?: { endedEarly: true; unreachedTopics: string[] }
+): string {
   const { candidate, plan } = session;
   return `The interview is over. Based on the FULL transcript above, write structured feedback for ${candidate.member.name}.
 
@@ -123,7 +126,11 @@ ${
   session.skipCount > 0
     ? `The candidate explicitly skipped ${session.skipCount} question(s) during this interview (said they didn't know the answer). This is a real, honest data point — factor it into gaps and category scores rather than ignoring it, but don't be needlessly harsh about it either; note specifically which topics were skipped if the transcript makes that clear.\n`
     : ""
-}
+}${
+    earlyEnd
+      ? `IMPORTANT: the candidate ended the interview early, before these planned topics were ever reached: ${earlyEnd.unreachedTopics.join(", ")}. Do not fabricate an assessment of these — score any category that depends heavily on them conservatively (that's genuinely "not assessed," not "weak," but you can't score it high either), and mention in the summary that the interview ended before full coverage was reached.\n`
+      : ""
+  }
 
 TOPICS COVERED IN THIS INTERVIEW:
 ${plan.map((t) => `- Day ${t.day} "${t.title}" [${t.bucket}]`).join("\n")}

@@ -258,6 +258,33 @@ export function InterviewChat({
     }
   }
 
+  // Deliberately not advertised anywhere in the candidate-facing copy — a
+  // low-key escape hatch for testing/demo runs, not a feature a real
+  // candidate is ever told exists. Unreachable by the graded contract
+  // (which only ever sends {sessionId, message}). Remaining topics are
+  // honestly counted as skipped server-side, not just silently dropped.
+  async function endEarly() {
+    if (loading) return;
+    if (!window.confirm("End this interview now? Remaining topics will honestly count as not covered in your feedback.")) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/interview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, endEarly: true }),
+      });
+      if (!res.ok) throw new Error(`Server responded ${res.status}`);
+      const data = await res.json();
+      setMessages((m) => [...m, { role: "interviewer", content: data.reply }]);
+      if (data.done) onComplete(data.feedback as Feedback);
+    } catch {
+      setError("Couldn't end the interview. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4">
       <div className="flex items-center justify-between mb-1 px-1">
@@ -290,6 +317,16 @@ export function InterviewChat({
             title="Copy session ID"
           >
             {copiedId ? "✓ copied" : `id: ${sessionId.slice(0, 8)}`}
+          </button>
+          <button
+            type="button"
+            onClick={endEarly}
+            disabled={loading}
+            className="mono text-[11px] rounded border px-2 py-0.5 cursor-pointer hover:border-[var(--danger)] disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ borderColor: "var(--border)", color: "var(--fg-dim)" }}
+            title="End the interview now (testing use — remaining topics count as not covered)"
+          >
+            end early
           </button>
         </div>
       </div>

@@ -255,12 +255,15 @@ function fallbackFeedback(session: SessionState): FeedbackResult {
   };
 }
 
-export async function getFeedback(session: SessionState): Promise<FeedbackResult> {
+export async function getFeedback(
+  session: SessionState,
+  earlyEnd?: { endedEarly: true; unreachedTopics: string[] }
+): Promise<FeedbackResult> {
   const system = buildSystemPrompt(session.candidate, session.plan);
   const messages: Groq.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: system },
     ...toGroqMessages(session.transcript),
-    { role: "system", content: buildFeedbackPrompt(session) },
+    { role: "system", content: buildFeedbackPrompt(session, earlyEnd) },
   ];
 
   try {
