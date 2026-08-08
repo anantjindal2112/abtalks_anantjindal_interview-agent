@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { TerminalShell } from "./TerminalShell";
+import { RadarChart } from "./RadarChart";
+import { CategoryScoreBars } from "./CategoryScoreBars";
+import { MasteryHeatmap } from "./MasteryHeatmap";
 import { DURATION } from "@/lib/motion";
+import type { TurnEvaluation } from "./RoadmapTrail";
 import type { Candidate, Feedback } from "@/lib/types";
 
 /** Restrained completion mark: circle fades in, then the check path draws
@@ -103,14 +107,41 @@ function Section({
 export function FeedbackReport({
   candidate,
   feedback,
+  sessionId,
+  sampleEvaluations,
   onRestart,
 }: {
   candidate: Candidate;
   feedback: Feedback;
+  sessionId: string;
+  /** When set (sample-demo mode), skips the live fetch entirely and renders
+   * this real, previously-captured evaluations trail instead — same shape,
+   * same component, just no network round-trip. */
+  sampleEvaluations?: TurnEvaluation[];
   onRestart: () => void;
 }) {
   const reduceMotion = useReducedMotion();
   const [copied, setCopied] = useState(false);
+  const [evaluations, setEvaluations] = useState<TurnEvaluation[]>(sampleEvaluations ?? []);
+
+  // Free GET, no Groq call — same evaluations trail Judge Mode used during
+  // the interview, fetched once here to build the mastery heatmap honestly
+  // from what was actually assessed rather than re-deriving it some other way.
+  useEffect(() => {
+    if (sampleEvaluations) return; // already have real data, nothing to fetch
+    let cancelled = false;
+    fetch(`/api/interview?sessionId=${encodeURIComponent(sessionId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.evaluations) setEvaluations(data.evaluations);
+      })
+      .catch(() => {
+        // heatmap just shows "not assessed" everywhere if this fails — non-critical
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, sampleEvaluations]);
 
   async function copyMarkdown() {
     try {
@@ -152,11 +183,55 @@ export function FeedbackReport({
             </p>
           </div>
 
+          {feedback.categoryScores && (
+            <div className="pt-4 border-t grid grid-cols-1 sm:grid-cols-2 gap-6 items-center" style={{ borderColor: "var(--border)" }}>
+              <RadarChart scores={feedback.categoryScores} />
+              <CategoryScoreBars scores={feedback.categoryScores} />
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <Section title="Strengths" icon="✓" color="var(--accent)" items={feedback.strengths} delayBase={0.1} />
             <Section title="Gaps" icon="⚠" color="var(--warn)" items={feedback.gaps} delayBase={0.2} />
             <Section title="Next steps" icon="→" color="var(--accent-2)" items={feedback.next} delayBase={0.3} />
           </div>
+
+          {!!feedback.misconceptions?.length && (
+            <div className="pt-4 border-t" style={{ borderColor: "var(--border)" }}>
+              <h3 className="mono text-xs uppercase tracking-wide" style={{ color: "var(--danger)" }}>
+                misconceptions detected
+              </h3>
+              <ul className="mt-2 flex flex-col gap-2">
+                {feedback.misconceptions.map((m, i) => (
+                  <motion.li
+                    key={i}
+                    initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: reduceMotion ? 0 : i * 0.08, duration: 0.2 }}
+                    className="text-sm leading-relaxed rounded-md border px-3 py-2"
+                    style={{ borderColor: "var(--danger)", background: "var(--bg-inset)", color: "var(--fg)" }}
+                  >
+                    {m}
+                  </motion.li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {evaluations.length > 0 && (
+            <div className="pt-4 border-t" style={{ borderColor: "var(--border)" }}>
+              <h3 className="mono text-xs uppercase tracking-wide" style={{ color: "var(--fg-dim)" }}>
+                curriculum mastery — this interview
+              </h3>
+              <p className="mt-1 text-xs" style={{ color: "var(--fg-dim)" }}>
+                Only the {new Set(evaluations.map((e) => e.day)).size} days actually covered in this interview are
+                scored — everything else is honestly &quot;not assessed&quot;, not guessed.
+              </p>
+              <div className="mt-3">
+                <MasteryHeatmap evaluations={evaluations} />
+              </div>
+            </div>
+          )}
 
           <div className="pt-2 border-t flex flex-wrap gap-2" style={{ borderColor: "var(--border)" }}>
             <button

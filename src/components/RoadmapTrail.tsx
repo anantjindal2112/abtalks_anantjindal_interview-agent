@@ -1,13 +1,25 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import type { MissionBucket, PlanTopic } from "@/lib/types";
+import type { Assessment, DecisionLabel, MissionBucket, PlanTopic } from "@/lib/types";
+
+export type TurnEvaluation = {
+  day: number;
+  topicTitle: string;
+  isFollowUp: boolean;
+  assessment: Assessment | null;
+  decisionLabel: DecisionLabel | null;
+  reasoning: string | null;
+  difficulty: number | null;
+};
 
 export type Progress = {
   phase: string;
   planIndex: number;
   questionsAsked: number;
   daysCovered: number[];
+  difficulty?: number;
+  evaluations?: TurnEvaluation[];
 } | null;
 
 const BUCKET_COLOR: Record<MissionBucket, string> = {
@@ -19,6 +31,29 @@ const BUCKET_COLOR: Record<MissionBucket, string> = {
 
 const NODE = 10; // dot diameter in px
 const COL = 20; // width of the graph-line column
+
+export function DifficultyIndicator({ level }: { level: number }) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <div className="flex items-center gap-2">
+      <span className="mono text-[10px] uppercase tracking-wide" style={{ color: "var(--fg-dim)" }}>
+        difficulty
+      </span>
+      <span className="flex gap-1" role="img" aria-label={`Difficulty level ${level} of 5`}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <motion.span
+            key={n}
+            className="size-2 rounded-full"
+            style={{ background: n <= level ? "var(--accent-2)" : "var(--bg-inset)", border: "1px solid var(--border)" }}
+            initial={false}
+            animate={{ scale: n === level && !reduceMotion ? [1, 1.3, 1] : 1 }}
+            transition={{ duration: 0.35 }}
+          />
+        ))}
+      </span>
+    </div>
+  );
+}
 
 export function RoadmapTrail({ plan, progress }: { plan: PlanTopic[]; progress: Progress }) {
   const reduceMotion = useReducedMotion();
@@ -33,6 +68,11 @@ export function RoadmapTrail({ plan, progress }: { plan: PlanTopic[]; progress: 
         <p className="mono text-[11px] mt-1" style={{ color: "var(--fg-dim)" }}>
           question {progress?.questionsAsked ?? 0} · {progress?.daysCovered.length ?? 0} days covered
         </p>
+        {typeof progress?.difficulty === "number" && (
+          <div className="mt-2">
+            <DifficultyIndicator level={progress.difficulty} />
+          </div>
+        )}
         <div className="mt-2 h-1 w-full overflow-hidden rounded-full" style={{ background: "var(--bg-inset)" }}>
           <motion.div
             className="h-full rounded-full"

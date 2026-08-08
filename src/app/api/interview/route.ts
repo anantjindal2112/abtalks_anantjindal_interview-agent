@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { buildInterviewPlan } from "@/lib/plan";
 import { getFeedback, getNextTurn, type TurnDecision } from "@/lib/groq";
 import { getSession, saveSession } from "@/lib/store";
+import { checkRateLimit, clientKeyFrom } from "@/lib/rateLimit";
 import type { Assessment, Candidate, DecisionLabel, InterviewResponse, PlanTopic, SessionState } from "@/lib/types";
 
 const MIN_QUESTIONS = 8;
@@ -9,6 +10,7 @@ const MIN_DAYS = 4;
 const MAX_FOLLOW_UPS_PER_TOPIC = 2;
 const HARD_QUESTION_CAP = 13;
 const INITIAL_DIFFICULTY = 2; // 1-5 scale, start slightly below middle and ramp with evidence
+const MAX_MESSAGE_LENGTH = 4000; // generous for a spoken-interview-style answer, cheap abuse guard
 
 /**
  * Deterministic difficulty adjustment from the model's own assessment of the
@@ -136,6 +138,18 @@ function isCandidate(x: unknown): x is Candidate {
 }
 
 export async function POST(request: Request) {
+  // The spec requires no auth on this endpoint, so this is deliberately not
+  // that — it protects the shared Groq quota from a runaway script or retry
+  // loop, not from a determined attacker. A real client (human or grader)
+  // having a normal conversation will never come close to this limit.
+  const rateLimit = checkRateLimit(clientKeyFrom(request));
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { reply: "Too many requests — please slow down.", done: false },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -147,7 +161,7 @@ export async function POST(request: Request) {
     return json({ reply: "Request body must be a JSON object.", done: false }, 400);
   }
   const b = body as Record<string, unknown>;
-  const sessionId = typeof b.sessionId === "string" ? b.sessionId : null;
+  const sessionId = typeof b.sessionId === "string" ? b.sessionId.slice(0, 200) : null;
   if (!sessionId) {
     return json({ reply: "sessionId is required.", done: false }, 400);
   }
@@ -171,6 +185,7 @@ export async function POST(request: Request) {
       daysCovered: [],
       phase: "warmup",
       difficulty: INITIAL_DIFFICULTY,
+      skipCount: 0,
       createdAt: Date.now(),
     };
 
@@ -210,17 +225,36 @@ export async function POST(request: Request) {
     });
   }
 
-  const message = typeof b.message === "string" ? b.message : "";
+  // A skip is a real interview move ("I don't know, let's move on"), not a
+  // free-text answer — the frontend's Skip button sends `skipped: true`
+  // rather than trusting arbitrary client text here, so the transcript
+  // records an honest fixed marker instead of whatever the client claims.
+  const isSkip = b.skipped === true;
+  const message = isSkip
+    ? "(Skipped — indicated they don't know this one.)"
+    : typeof b.message === "string"
+      ? b.message.slice(0, MAX_MESSAGE_LENGTH)
+      : "";
   session.transcript.push({ role: "candidate", content: message });
+  if (isSkip) session.skipCount += 1;
 
   const guardrailsBefore = computeGuardrails(session);
-  const decision = await getNextTurn(session, false);
-  const { action, corrected } = resolveAction(decision.action, guardrailsBefore);
+  const decision = await getNextTurn(session, false, isSkip);
+  // Never let a skip lead to a follow-up on the very topic just skipped,
+  // regardless of what the model returned — same "don't trust the model for
+  // control flow" principle as the coverage guardrails below.
+  const modelAction = isSkip && decision.action === "follow_up" ? "next_topic" : decision.action;
+  const { action, corrected } = resolveAction(modelAction, guardrailsBefore);
   const reply = corrected ? deterministicReply(action, session) : decision.reply;
 
   // Evaluation of the answer that just happened is trustworthy regardless of
   // whether the control-flow action itself got overridden below.
   session.difficulty = updateDifficulty(session.difficulty, decision.assessment);
+  // Guaranteed consequence for repeated skipping — a code-enforced floor, not
+  // just hoping the model's assessment naturally scores it low enough.
+  if (isSkip && session.skipCount >= 2) {
+    session.difficulty = Math.max(1, session.difficulty - 1);
+  }
   const metaExtra = { decision, action, corrected, difficulty: session.difficulty };
 
   if (action === "follow_up") {
@@ -291,5 +325,6 @@ export async function GET(request: Request) {
         reasoning: t.meta!.reasoning ?? null,
         difficulty: t.meta!.difficulty ?? null,
       })),
+    transcript: session.transcript.map((t) => ({ role: t.role, content: t.content })),
   });
 }

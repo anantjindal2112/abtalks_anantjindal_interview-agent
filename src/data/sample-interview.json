@@ -1,0 +1,477 @@
+{
+  "candidate": {
+    "member": {
+      "id": "CAND-004",
+      "name": "David Miller",
+      "jobRole": "Business Analyst",
+      "yearsExperience": 8,
+      "education": "MBA",
+      "status": "COMPLETED"
+    },
+    "missions": [
+      {
+        "day": 7,
+        "title": "Embeddings Explained",
+        "passed": true,
+        "attempts": 4
+      },
+      {
+        "day": 8,
+        "title": "Vector Databases Overview",
+        "passed": true,
+        "attempts": 5
+      },
+      {
+        "day": 10,
+        "title": "Retrieval & Matching Engine",
+        "passed": true,
+        "attempts": 5
+      },
+      {
+        "day": 12,
+        "title": "Prompt Engineering Fundamentals",
+        "passed": true,
+        "attempts": 3
+      },
+      {
+        "day": 16,
+        "title": "Chatbot Backend & API Integration",
+        "passed": true,
+        "attempts": 2
+      },
+      {
+        "day": 20,
+        "title": "Conversation Memory & Context Management",
+        "passed": true,
+        "attempts": 3
+      },
+      {
+        "day": 22,
+        "title": "Multi-Agent Orchestration",
+        "passed": true,
+        "attempts": 4
+      },
+      {
+        "day": 23,
+        "title": "Model Context Protocol (MCP)",
+        "passed": true,
+        "attempts": 5
+      },
+      {
+        "day": 28,
+        "title": "Docker & Kubernetes Deployment",
+        "skipped": true
+      },
+      {
+        "day": 31,
+        "title": "Capstone Project & Final Demo",
+        "passed": true,
+        "attempts": 2
+      }
+    ],
+    "signals": {
+      "commitDays": 18,
+      "missionsCompleted": 28,
+      "missionsFirstTry": 6
+    }
+  },
+  "plan": [
+    {
+      "day": 16,
+      "title": "Chatbot Backend & API Integration",
+      "bucket": "confident"
+    },
+    {
+      "day": 7,
+      "title": "Embeddings Explained",
+      "bucket": "struggled"
+    },
+    {
+      "day": 8,
+      "title": "Vector Databases Overview",
+      "bucket": "struggled"
+    },
+    {
+      "day": 10,
+      "title": "The Retrieval & Matching Engine",
+      "bucket": "struggled"
+    },
+    {
+      "day": 12,
+      "title": "Prompt Engineering Fundamentals",
+      "bucket": "struggled"
+    },
+    {
+      "day": 31,
+      "title": "Capstone Project & Final Demo",
+      "bucket": "confident"
+    }
+  ],
+  "transcript": [
+    {
+      "role": "interviewer",
+      "content": "Hi David, thanks for joining – we'll have a brief technical chat about the projects you built in the cohort. To start, can you describe in one breath how you’d explain the core idea behind the chatbot backend and API integration you implemented on Day 16 to a junior teammate?"
+    },
+    {
+      "role": "candidate",
+      "content": "The backend exposes a /chat endpoint that takes the user's message, calls the retrieval engine to fetch relevant plan documents, then passes that context plus the question to the LLM to generate a grounded answer, and stores the exchange in SQLite so we can maintain conversation history across turns."
+    },
+    {
+      "role": "interviewer",
+      "content": "Got it. Could you walk me through how you handle session‑based conversation management in that /chat endpoint – for example, how you keep track of user context across multiple turns?"
+    },
+    {
+      "role": "candidate",
+      "content": "I store a session_id in SQLite with each message, and on every request I load the last N messages for that session and include them in the prompt so the LLM has context of what was asked before."
+    },
+    {
+      "role": "interviewer",
+      "content": "That's a solid start—how do you decide how many previous messages (N) to include, and what safeguards do you have if the combined prompt exceeds the model's token limit?"
+    },
+    {
+      "role": "candidate",
+      "content": "For embeddings I used sentence-transformers to convert each knowledge base chunk into a vector, then stored those vectors in ChromaDB alongside the original text and metadata like source and section."
+    },
+    {
+      "role": "interviewer",
+      "content": "Got it, thanks for clarifying the session handling. Let's shift to embeddings: can you explain how you generate and store embeddings for your knowledge base, and why you chose sentence‑transformers and ChromaDB?"
+    },
+    {
+      "role": "candidate",
+      "content": "Honestly the embeddings just guarantee that similar meaning text gets matched correctly, so once it's in the vector database retrieval is basically solved and always returns the right answer."
+    },
+    {
+      "role": "interviewer",
+      "content": "You mentioned that embeddings guarantee the right answer—can you discuss any limitations of using embeddings for retrieval and how you might handle cases where semantic similarity isn’t enough to retrieve the correct document?"
+    },
+    {
+      "role": "candidate",
+      "content": "You're right, that's not quite accurate - embeddings only give approximate semantic similarity, not guaranteed correctness, so we still saw irrelevant chunks come back sometimes especially with short or ambiguous queries."
+    },
+    {
+      "role": "interviewer",
+      "content": "How did you evaluate whether the embeddings were grouping related healthcare concepts effectively, and did you use any visualization or quantitative metrics to assess their quality?"
+    },
+    {
+      "role": "candidate",
+      "content": "I used PCA to reduce the embeddings to 2D and plotted them with matplotlib, and I could visually see healthcare plan documents clustering separately from claims documents, which gave me confidence the embeddings were capturing meaningful structure."
+    },
+    {
+      "role": "interviewer",
+      "content": "Thanks for that overview. Moving on, could you walk me through why you selected ChromaDB for your vector store over other options, and what factors you considered when comparing it to a managed solution like Pinecone?"
+    },
+    {
+      "role": "candidate",
+      "content": "I set up a local ChromaDB instance for fast iteration during development, and separately created a Pinecone index to compare managed hosting - I ended up preferring Chroma for this project since our document volume was small enough that we didn't need Pinecone's scaling."
+    },
+    {
+      "role": "interviewer",
+      "content": "If your document volume grew significantly, what changes would you need to make when moving from ChromaDB to Pinecone, and how would you handle data migration and query performance?"
+    },
+    {
+      "role": "candidate",
+      "content": "I'd export the vectors and metadata in batches and bulk-upload them to a new Pinecone index, run both in parallel for a while to compare query latency and result quality, and only cut over once Pinecone's p95 latency matched or beat our Chroma baseline."
+    },
+    {
+      "role": "interviewer",
+      "content": "Got it, thanks for outlining that migration plan. Moving on to the retrieval and matching engine from Day 10: how does your system decide whether to use a SQL query, a vector search, or a hybrid approach for a given user question?"
+    },
+    {
+      "role": "candidate",
+      "content": "For prompt engineering I compared zero-shot, few-shot and chain-of-thought variations against a fixed set of test questions, scoring them on accuracy and how well they stuck to only using the retrieved context."
+    },
+    {
+      "role": "interviewer",
+      "content": "I think we got off track—could you explain the logic your retrieval engine uses to choose between a plain SQL lookup, a vector similarity search, or a hybrid combination for a user's query?"
+    },
+    {
+      "role": "candidate",
+      "content": "The router looks for structured signals like plan numbers or claim IDs in the query and routes those to SQL, sends open-ended conceptual questions to vector search, and if it's ambiguous it runs both and merges the deduplicated results ranked by a weighted score."
+    },
+    {
+      "role": "interviewer",
+      "content": "Can you dive into the details of how you compute the weighted score when merging SQL and vector results, and what strategy you use to deduplicate overlapping documents?"
+    },
+    {
+      "role": "candidate",
+      "content": "For the capstone I integrated the retrieval engine, the agent router, and conversation memory into one FastAPI backend with a React frontend, containerized with Docker, and demoed it answering real healthcare questions end to end with citations."
+    },
+    {
+      "role": "interviewer",
+      "content": "Thanks for the overview. Let's move to prompt engineering: can you describe the key differences between zero‑shot, few‑shot, and chain‑of‑thought prompting, and how you evaluated their impact on your chatbot's accuracy?"
+    },
+    {
+      "role": "candidate",
+      "content": "Zero-shot just asks the question directly with no examples, few-shot gives the model 2-3 example Q&A pairs to establish the pattern, and chain-of-thought asks the model to reason step by step before answering - chain-of-thought worked best for multi-step billing questions while zero-shot was fine for simple factual lookups."
+    },
+    {
+      "role": "interviewer",
+      "content": "What failure mode or edge case did you encounter when using chain‑of‑thought prompting, and how did you mitigate it?"
+    },
+    {
+      "role": "candidate",
+      "content": "The main failure mode was chain-of-thought sometimes leaking its reasoning steps into the final answer shown to the user instead of just the conclusion, so I added a post-processing step that strips everything before a final-answer marker in the prompt template before displaying the response."
+    },
+    {
+      "role": "interviewer",
+      "content": "That covers everything I wanted to ask. Thanks for walking me through your work — your feedback is coming up now."
+    }
+  ],
+  "evaluations": [
+    {
+      "day": 16,
+      "topicTitle": "Chatbot Backend & API Integration",
+      "isFollowUp": false,
+      "assessment": null,
+      "decisionLabel": "SWITCH_TOPIC",
+      "reasoning": "Opening on their strongest first-try topic to build rapport.",
+      "difficulty": 2
+    },
+    {
+      "day": 16,
+      "topicTitle": "Chatbot Backend & API Integration",
+      "isFollowUp": true,
+      "assessment": {
+        "correctness": 8,
+        "depth": 6,
+        "missingConcepts": [
+          "session-based conversation management",
+          "function calling integration",
+          "testing via Postman"
+        ],
+        "misconception": null
+      },
+      "decisionLabel": "DEEPEN",
+      "reasoning": "Answer omitted session management details, so probe deeper on that aspect.",
+      "difficulty": 2
+    },
+    {
+      "day": 16,
+      "topicTitle": "Chatbot Backend & API Integration",
+      "isFollowUp": true,
+      "assessment": {
+        "correctness": 8,
+        "depth": 6,
+        "missingConcepts": [
+          "strategy for selecting number of messages",
+          "token limit handling"
+        ],
+        "misconception": null
+      },
+      "decisionLabel": "DEEPEN",
+      "reasoning": "Answer correct but shallow; probing token limit handling and selection logic.",
+      "difficulty": 2
+    },
+    {
+      "day": 7,
+      "topicTitle": "Embeddings Explained",
+      "isFollowUp": false,
+      "assessment": {
+        "correctness": 9,
+        "depth": 6,
+        "missingConcepts": [
+          "strategy for selecting N based on token budget"
+        ],
+        "misconception": null
+      },
+      "decisionLabel": "SWITCH_TOPIC",
+      "reasoning": "Follow‑up limit reached for Day 16; moving to the next planned topic on embeddings.",
+      "difficulty": 2
+    },
+    {
+      "day": 7,
+      "topicTitle": "Embeddings Explained",
+      "isFollowUp": true,
+      "assessment": {
+        "correctness": 3,
+        "depth": 2,
+        "missingConcepts": [
+          "embedding dimensionality",
+          "model selection rationale",
+          "distance metric (e.g., cosine similarity)",
+          "indexing strategy",
+          "metadata usage",
+          "evaluation of retrieval performance"
+        ],
+        "misconception": "embeddings guarantee correct matching"
+      },
+      "decisionLabel": "VERIFY_MISCONCEPTION",
+      "reasoning": "Candidate shows misconception that embeddings guarantee correct matches; need to probe understanding of limits.",
+      "difficulty": 1
+    },
+    {
+      "day": 7,
+      "topicTitle": "Embeddings Explained",
+      "isFollowUp": true,
+      "assessment": {
+        "correctness": 8,
+        "depth": 6,
+        "missingConcepts": [
+          "visualizing embedding clusters with PCA",
+          "evaluating retrieval performance with metrics like precision/recall"
+        ],
+        "misconception": null
+      },
+      "decisionLabel": "DEEPEN",
+      "reasoning": "Candidate acknowledged limitations; probing evaluation methods will reveal deeper understanding.",
+      "difficulty": 1
+    },
+    {
+      "day": 8,
+      "topicTitle": "Vector Databases Overview",
+      "isFollowUp": false,
+      "assessment": {
+        "correctness": 8,
+        "depth": 6,
+        "missingConcepts": [
+          "quantitative clustering metrics (e.g., silhouette score)",
+          "validation against ground truth"
+        ],
+        "misconception": null
+      },
+      "decisionLabel": "SWITCH_TOPIC",
+      "reasoning": "Follow-up limit reached; transition to next planned topic on vector databases.",
+      "difficulty": 1
+    },
+    {
+      "day": 8,
+      "topicTitle": "Vector Databases Overview",
+      "isFollowUp": true,
+      "assessment": {
+        "correctness": 8,
+        "depth": 6,
+        "missingConcepts": [
+          "metadata filtering",
+          "distance metric selection",
+          "cost and latency considerations"
+        ],
+        "misconception": null
+      },
+      "decisionLabel": "DEEPEN",
+      "reasoning": "Answer was correct but shallow; probing scaling and migration considerations.",
+      "difficulty": 1
+    },
+    {
+      "day": 10,
+      "topicTitle": "The Retrieval & Matching Engine",
+      "isFollowUp": false,
+      "assessment": {
+        "correctness": 8,
+        "depth": 7,
+        "missingConcepts": [
+          "handling of query intent classification",
+          "fallback mechanisms",
+          "performance trade‑offs",
+          "cost considerations"
+        ],
+        "misconception": null
+      },
+      "decisionLabel": "SWITCH_TOPIC",
+      "reasoning": "Follow-up limit reached for vector DB topic, so transition to next planned topic.",
+      "difficulty": 1
+    },
+    {
+      "day": 10,
+      "topicTitle": "The Retrieval & Matching Engine",
+      "isFollowUp": true,
+      "assessment": {
+        "correctness": 2,
+        "depth": 2,
+        "missingConcepts": [
+          "criteria for choosing SQL vs vector vs hybrid",
+          "routing mechanism",
+          "fallback handling"
+        ],
+        "misconception": null
+      },
+      "decisionLabel": "CLARIFY",
+      "reasoning": "Candidate answered unrelated prompt‑engineering question; need clarification on retrieval decision logic.",
+      "difficulty": 1
+    },
+    {
+      "day": 10,
+      "topicTitle": "The Retrieval & Matching Engine",
+      "isFollowUp": true,
+      "assessment": {
+        "correctness": 8,
+        "depth": 6,
+        "missingConcepts": [
+          "weighted scoring formula",
+          "deduplication method"
+        ],
+        "misconception": null
+      },
+      "decisionLabel": "DEEPEN",
+      "reasoning": "Answer was correct but lacked specifics on scoring and deduplication, probing deeper.",
+      "difficulty": 1
+    },
+    {
+      "day": 12,
+      "topicTitle": "Prompt Engineering Fundamentals",
+      "isFollowUp": false,
+      "assessment": {
+        "correctness": 2,
+        "depth": 2,
+        "missingConcepts": [
+          "explanation of zero-shot prompting",
+          "explanation of few-shot prompting",
+          "explanation of chain-of-thought prompting",
+          "evaluation methodology details"
+        ],
+        "misconception": null
+      },
+      "decisionLabel": "SWITCH_TOPIC",
+      "reasoning": "Candidate deviated from retrieval question; need to shift to next planned topic.",
+      "difficulty": 1
+    },
+    {
+      "day": 12,
+      "topicTitle": "Prompt Engineering Fundamentals",
+      "isFollowUp": true,
+      "assessment": {
+        "correctness": 8,
+        "depth": 6,
+        "missingConcepts": [
+          "system prompt design",
+          "prompt template management",
+          "handling hallucinations"
+        ],
+        "misconception": null
+      },
+      "decisionLabel": "CHALLENGE",
+      "reasoning": "Answer correctly described prompting types but omitted discussion of practical failure modes; probing edge case to gauge depth.",
+      "difficulty": 1
+    }
+  ],
+  "feedback": {
+    "summary": "David communicated his work clearly and demonstrated solid practical knowledge of building a retrieval-augmented healthcare chatbot, especially around backend integration, embeddings, and prompt engineering. He explained his design choices and mitigations well, though some deeper engineering details and production considerations were missing or only briefly touched.",
+    "strengths": [
+      "Explained the /chat endpoint flow and session-based conversation management concisely",
+      "Implemented and visualized embeddings using sentence-transformers, PCA, and ChromaDB, and recognized their limitations",
+      "Articulated the rationale for choosing a local ChromaDB over Pinecone and outlined a concrete migration strategy",
+      "Compared zero-shot, few-shot, and chain-of-thought prompting and devised a post-processing fix for reasoning-leakage"
+    ],
+    "gaps": [
+      "Did not address how to truncate or summarize context when the prompt exceeds token limits",
+      "Did not detail the weighted scoring formula or deduplication logic used when merging SQL and vector results",
+      "Limited discussion of production-grade concerns such as scaling, monitoring, error handling, and healthcare compliance",
+      "Skipped quantitative evaluation of retrieval quality beyond visual clustering"
+    ],
+    "next": [
+      "Experiment with prompt-truncation techniques (e.g., summarization, sliding windows) and measure impact on token usage",
+      "Implement and document a concrete hybrid scoring algorithm (e.g., linear combination of relevance scores) and a deterministic deduplication method",
+      "Add observability (logging, metrics, alerts) and security/compliance checks appropriate for PHI handling",
+      "Run systematic retrieval benchmarks (e.g., MAP, nDCG) on a held-out question set to quantify embedding effectiveness"
+    ],
+    "categoryScores": {
+      "technicalKnowledge": 70,
+      "engineeringReasoning": 65,
+      "systemDesign": 60,
+      "communication": 80,
+      "productionAwareness": 55
+    },
+    "misconceptions": [
+      "Initially claimed embeddings guarantee correct answers; corrected to acknowledge they provide only approximate semantic similarity"
+    ]
+  }
+}

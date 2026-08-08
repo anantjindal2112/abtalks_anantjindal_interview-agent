@@ -67,7 +67,7 @@ Vary your phrasing. Each topic lists a suggested angle — use it, or a differen
 "reply" is exactly what gets shown to the candidate — never include the action, decision, reasoning, assessment, scoring, or any meta-commentary inside it.`;
 }
 
-export function buildStateBlock(session: SessionState): string {
+export function buildStateBlock(session: SessionState, isSkip = false): string {
   const topic = session.plan[session.planIndex];
   const isLastTopic = session.planIndex === session.plan.length - 1;
   const minQuestionsMet = session.questionsAsked >= 8;
@@ -87,7 +87,11 @@ ${
     ? "You are AT THE HARD CAP for interview length. You must choose next_topic (if topics remain) or conclude now — do not choose follow_up."
     : ""
 }
-conclude is ${concludeAllowed ? "ALLOWED" : "NOT ALLOWED YET"} right now.${
+${
+  isSkip
+    ? `The candidate explicitly SKIPPED this question — they said they don't know it, not a real answer. Acknowledge it warmly and briefly like a real interviewer would ("No worries, let's move on" / "That's alright, happens to everyone" — vary it, don't reuse the same line every time), then move to the next planned topic. You MUST use action "next_topic" (or "conclude" if that's explicitly allowed below) — never "follow_up" on a question they just said they don't know. For "assessment": correctness and depth should be low (1-2), missingConcepts should list what a real answer would have needed, misconception should be null (skipping isn't a misconception, it's an honest gap) — this is a genuine, real assessment of "no answer given," not a fabricated harsh score.\n`
+    : ""
+}conclude is ${concludeAllowed ? "ALLOWED" : "NOT ALLOWED YET"} right now.${
     concludeAllowed
       ? ""
       : isLastTopic
@@ -115,6 +119,11 @@ export function buildFeedbackPrompt(session: SessionState): string {
   return `The interview is over. Based on the FULL transcript above, write structured feedback for ${candidate.member.name}.
 
 Ground every point in something that actually happened in the transcript — do not invent claims. Also weigh their cohort history: topics marked [failed] or [skipped] in the plan below are known risk areas even if the candidate answered well in the interview (recovery is a strength worth noting); topics marked [struggled] took them multiple attempts during the cohort.
+${
+  session.skipCount > 0
+    ? `The candidate explicitly skipped ${session.skipCount} question(s) during this interview (said they didn't know the answer). This is a real, honest data point — factor it into gaps and category scores rather than ignoring it, but don't be needlessly harsh about it either; note specifically which topics were skipped if the transcript makes that clear.\n`
+    : ""
+}
 
 TOPICS COVERED IN THIS INTERVIEW:
 ${plan.map((t) => `- Day ${t.day} "${t.title}" [${t.bucket}]`).join("\n")}

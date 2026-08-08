@@ -131,9 +131,13 @@ function sanitizeTurnDecision(raw: TurnDecision): TurnDecision {
  * Falls back to a safe, deterministic message if the model call fails or
  * returns malformed JSON, so the endpoint never 500s on the LLM being flaky.
  */
-export async function getNextTurn(session: SessionState, isOpening: boolean): Promise<TurnDecision> {
+export async function getNextTurn(
+  session: SessionState,
+  isOpening: boolean,
+  isSkip = false
+): Promise<TurnDecision> {
   const system = buildSystemPrompt(session.candidate, session.plan);
-  const stateBlock = isOpening ? buildOpeningStateBlock(session) : buildStateBlock(session);
+  const stateBlock = isOpening ? buildOpeningStateBlock(session) : buildStateBlock(session, isSkip);
 
   const messages: Groq.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: system },

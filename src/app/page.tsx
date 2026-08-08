@@ -9,13 +9,23 @@ import { CandidatePicker } from "@/components/CandidatePicker";
 import { CandidateIntelligence } from "@/components/CandidateIntelligence";
 import { InterviewChat } from "@/components/InterviewChat";
 import { FeedbackReport } from "@/components/FeedbackReport";
+import type { TurnEvaluation } from "@/components/RoadmapTrail";
+import sampleInterviewRaw from "@/data/sample-interview.json";
 import type { Candidate, Feedback } from "@/lib/types";
+
+// A real, previously-captured completed interview (David Miller, CAND-004) —
+// not fabricated — used only for the "view a sample" demo entry point so
+// judges can see the full report instantly without spending a live Groq call
+// or waiting through a 10-13 question interview.
+const SAMPLE_CANDIDATE = sampleInterviewRaw.candidate as Candidate;
+const SAMPLE_FEEDBACK = sampleInterviewRaw.feedback as Feedback;
+const SAMPLE_EVALUATIONS = sampleInterviewRaw.evaluations as unknown as TurnEvaluation[];
 
 type Stage =
   | { name: "select" }
   | { name: "profile"; candidate: Candidate }
   | { name: "interview"; candidate: Candidate; sessionId: string }
-  | { name: "done"; candidate: Candidate; feedback: Feedback };
+  | { name: "done"; candidate: Candidate; sessionId: string; feedback: Feedback; sampleEvaluations?: TurnEvaluation[] };
 
 export default function Home() {
   const [stage, setStage] = useState<Stage>({ name: "select" });
@@ -52,7 +62,19 @@ export default function Home() {
           <ThemeToggle />
         </motion.header>
 
-        {stage.name === "select" && <Hero />}
+        {stage.name === "select" && (
+          <Hero
+            onViewSample={() =>
+              setStage({
+                name: "done",
+                candidate: SAMPLE_CANDIDATE,
+                sessionId: "sample",
+                feedback: SAMPLE_FEEDBACK,
+                sampleEvaluations: SAMPLE_EVALUATIONS,
+              })
+            }
+          />
+        )}
 
         <AnimatePresence mode="wait">
           {stage.name === "select" && (
@@ -98,7 +120,9 @@ export default function Home() {
               <InterviewChat
                 candidate={stage.candidate}
                 sessionId={stage.sessionId}
-                onComplete={(feedback) => setStage({ name: "done", candidate: stage.candidate, feedback })}
+                onComplete={(feedback) =>
+                  setStage({ name: "done", candidate: stage.candidate, sessionId: stage.sessionId, feedback })
+                }
               />
             </motion.div>
           )}
@@ -111,9 +135,19 @@ export default function Home() {
               exit={reduceMotion ? undefined : { opacity: 0, y: -8 }}
               transition={{ duration: DURATION.page, ease: EASE_OUT }}
             >
+              {stage.sampleEvaluations && (
+                <div
+                  className="mb-3 mono text-[11px] rounded-md border px-3 py-2"
+                  style={{ borderColor: "var(--accent-2)", color: "var(--accent-2)", background: "var(--bg-elevated)" }}
+                >
+                  ◆ Sample report — a real, previously-completed interview, shown instantly for demo purposes.
+                </div>
+              )}
               <FeedbackReport
                 candidate={stage.candidate}
                 feedback={stage.feedback}
+                sessionId={stage.sessionId}
+                sampleEvaluations={stage.sampleEvaluations}
                 onRestart={() => setStage({ name: "select" })}
               />
             </motion.div>

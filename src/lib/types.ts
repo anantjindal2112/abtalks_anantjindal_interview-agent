@@ -121,6 +121,7 @@ export type SessionState = {
   daysCovered: number[];
   phase: InterviewPhase;
   difficulty: number; // 1-5, adjusted from assessment signal each turn
+  skipCount: number; // candidate-initiated "I don't know" skips; 2nd+ forces a difficulty penalty in code
   createdAt: number;
   feedback?: Feedback; // cached once the interview concludes, so repeat calls don't re-generate
 };

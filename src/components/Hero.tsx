@@ -49,7 +49,7 @@ const FEATURES = [
   },
 ];
 
-export function Hero() {
+export function Hero({ onViewSample }: { onViewSample: () => void }) {
   const reduceMotion = useReducedMotion();
   return (
     <div className="mb-8">
@@ -93,6 +93,18 @@ export function Hero() {
             </motion.div>
           ))}
         </div>
+
+        <motion.button
+          type="button"
+          onClick={onViewSample}
+          initial={reduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: reduceMotion ? 0 : 0.45, duration: 0.25 }}
+          className="mono text-xs mt-5 cursor-pointer hover:underline"
+          style={{ color: "var(--accent-2)" }}
+        >
+          → View a sample completed interview (real transcript, no waiting)
+        </motion.button>
       </motion.div>
     </div>
   );

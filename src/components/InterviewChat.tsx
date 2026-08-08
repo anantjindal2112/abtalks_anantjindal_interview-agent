@@ -3,12 +3,85 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { TerminalShell } from "./TerminalShell";
-import { RoadmapTrail, type Progress } from "./RoadmapTrail";
+import { RoadmapTrail, type Progress, type TurnEvaluation } from "./RoadmapTrail";
+import { JudgeMode } from "./JudgeMode";
 import { buildInterviewPlan } from "@/lib/plan";
 import { DURATION, EASE_OUT } from "@/lib/motion";
-import type { Candidate, Feedback } from "@/lib/types";
+import type { Candidate, DecisionLabel, Feedback } from "@/lib/types";
 
 type Message = { role: "interviewer" | "candidate"; content: string };
+
+const DECISION_STYLE: Record<DecisionLabel, { label: string; color: string }> = {
+  DEEPEN: { label: "deepen", color: "var(--accent-2)" },
+  CHALLENGE: { label: "challenge ↑", color: "var(--warn)" },
+  CLARIFY: { label: "clarify", color: "var(--fg-dim)" },
+  VERIFY_MISCONCEPTION: { label: "verifying", color: "var(--danger)" },
+  SWITCH_TOPIC: { label: "new topic", color: "var(--accent)" },
+  CONCLUDE: { label: "wrapping up", color: "var(--accent)" },
+};
+
+function DecisionChip({ evaluation }: { evaluation: TurnEvaluation }) {
+  const reduceMotion = useReducedMotion();
+  if (!evaluation.decisionLabel) return null;
+  const style = DECISION_STYLE[evaluation.decisionLabel];
+  return (
+    <motion.span
+      initial={reduceMotion ? false : { opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: DURATION.chip }}
+      className="mono text-[10px] rounded-full border px-2 py-0.5 inline-block"
+      style={{ borderColor: style.color, color: style.color }}
+      title={evaluation.reasoning ?? undefined}
+    >
+      {style.label}
+    </motion.span>
+  );
+}
+
+const PREP_STEPS = [
+  "Reading candidate journey",
+  "Mapping curriculum",
+  "Selecting focus areas",
+  "Preparing adaptive interview",
+];
+
+/** Shown only before the very first message — a real, honest sequence (not a
+ * fake progress bar): the plan really is built from the candidate's journey
+ * before this renders. Advances on a timer but simply holds on the last step
+ * until the real fetch resolves, whichever comes first. */
+function PreparingInterview() {
+  const reduceMotion = useReducedMotion();
+  const [stepIndex, setStepIndex] = useState(reduceMotion ? PREP_STEPS.length - 1 : 0);
+
+  useEffect(() => {
+    if (reduceMotion || stepIndex >= PREP_STEPS.length - 1) return;
+    const id = setTimeout(() => setStepIndex((i) => i + 1), 550);
+    return () => clearTimeout(id);
+  }, [stepIndex, reduceMotion]);
+
+  return (
+    <div className="flex flex-col gap-1.5 py-1" role="status" aria-live="polite">
+      {PREP_STEPS.map((step, i) => {
+        const state = i < stepIndex ? "done" : i === stepIndex ? "active" : "pending";
+        return (
+          <motion.div
+            key={step}
+            initial={false}
+            animate={{ opacity: state === "pending" ? 0.35 : 1 }}
+            transition={{ duration: 0.2 }}
+            className="flex items-center gap-2 mono text-xs"
+            style={{ color: state === "pending" ? "var(--fg-dim)" : "var(--fg)" }}
+          >
+            <span className="w-3 text-center" aria-hidden style={{ color: state === "done" ? "var(--accent)" : "var(--fg-dim)" }}>
+              {state === "done" ? "✓" : state === "active" ? "›" : "·"}
+            </span>
+            {step}
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+}
 
 const THINKING_LINES = [
   "> reading your last answer",
@@ -46,7 +119,7 @@ function ThinkingIndicator() {
   );
 }
 
-function Bubble({ message }: { message: Message }) {
+function Bubble({ message, evaluation }: { message: Message; evaluation?: TurnEvaluation }) {
   const reduceMotion = useReducedMotion();
   const isInterviewer = message.role === "interviewer";
   return (
@@ -57,8 +130,9 @@ function Bubble({ message }: { message: Message }) {
       className={`flex ${isInterviewer ? "justify-start" : "justify-end"}`}
     >
       <div className={`max-w-[85%] ${isInterviewer ? "" : "text-right"}`}>
-        <div className="mono text-[10px] mb-1" style={{ color: "var(--fg-dim)" }}>
+        <div className="mono text-[10px] mb-1 flex items-center gap-1.5" style={{ color: "var(--fg-dim)" }}>
           {isInterviewer ? "interviewer" : "you"}
+          {isInterviewer && evaluation && <DecisionChip evaluation={evaluation} />}
         </div>
         <div
           className="rounded-lg px-3.5 py-2.5 text-sm leading-relaxed inline-block text-left"
@@ -84,6 +158,7 @@ export function InterviewChat({
   sessionId: string;
   onComplete: (feedback: Feedback) => void;
 }) {
+  const reduceMotion = useReducedMotion();
   const plan = useMemo(() => buildInterviewPlan(candidate), [candidate]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -133,18 +208,17 @@ export function InterviewChat({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading]);
 
-  async function send() {
-    const text = input.trim();
-    if (!text || loading) return;
+  async function submitTurn(payload: { message: string } | { skipped: true }, displayText: string) {
+    if (loading) return;
     setInput("");
-    setMessages((m) => [...m, { role: "candidate", content: text }]);
+    setMessages((m) => [...m, { role: "candidate", content: displayText }]);
     setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/interview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, message: text }),
+        body: JSON.stringify({ sessionId, ...payload }),
       });
       if (!res.ok) throw new Error(`Server responded ${res.status}`);
       const data = await res.json();
@@ -155,13 +229,24 @@ export function InterviewChat({
         return;
       }
     } catch {
-      setError("That message didn't go through. You can try sending it again.");
+      setError("That message didn't go through. You can try again.");
     } finally {
       setLoading(false);
       inputRef.current?.focus();
     }
   }
 
+  function send() {
+    const text = input.trim();
+    if (!text) return;
+    submitTurn({ message: text }, text);
+  }
+
+  function skip() {
+    submitTurn({ skipped: true }, "— skipped, don't know this one —");
+  }
+
+  const [judgeMode, setJudgeMode] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
   async function copySessionId() {
     try {
@@ -184,15 +269,29 @@ export function InterviewChat({
             {candidate.member.jobRole}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={copySessionId}
-          className="mono text-[11px] rounded border px-2 py-0.5 cursor-pointer hover:border-[var(--accent-2)]"
-          style={{ borderColor: "var(--border)", color: "var(--fg-dim)" }}
-          title="Copy session ID"
-        >
-          {copiedId ? "✓ copied" : `id: ${sessionId.slice(0, 8)}`}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setJudgeMode((v) => !v)}
+            aria-pressed={judgeMode}
+            className="mono text-[11px] rounded border px-2 py-0.5 cursor-pointer hover:border-[var(--accent-2)]"
+            style={{
+              borderColor: judgeMode ? "var(--accent-2)" : "var(--border)",
+              color: judgeMode ? "var(--accent-2)" : "var(--fg-dim)",
+            }}
+          >
+            {judgeMode ? "✓ judge mode" : "judge mode"}
+          </button>
+          <button
+            type="button"
+            onClick={copySessionId}
+            className="mono text-[11px] rounded border px-2 py-0.5 cursor-pointer hover:border-[var(--accent-2)]"
+            style={{ borderColor: "var(--border)", color: "var(--fg-dim)" }}
+            title="Copy session ID"
+          >
+            {copiedId ? "✓ copied" : `id: ${sessionId.slice(0, 8)}`}
+          </button>
+        </div>
       </div>
       <div className="hidden lg:block" aria-hidden />
       <TerminalShell title={`interviewer@ai-cohort:~/session/${sessionId.slice(0, 8)}$`}>
@@ -205,11 +304,16 @@ export function InterviewChat({
           style={{ height: "min(56vh, 520px)" }}
         >
           <AnimatePresence initial={false}>
-            {messages.map((m, i) => (
-              <Bubble key={i} message={m} />
-            ))}
+            {(() => {
+              let interviewerIndex = -1;
+              return messages.map((m, i) => {
+                if (m.role === "interviewer") interviewerIndex++;
+                const evaluation = m.role === "interviewer" ? progress?.evaluations?.[interviewerIndex] : undefined;
+                return <Bubble key={i} message={m} evaluation={evaluation} />;
+              });
+            })()}
           </AnimatePresence>
-          {loading && <ThinkingIndicator />}
+          {loading && (messages.length === 0 ? <PreparingInterview /> : <ThinkingIndicator />)}
           {error && (
             <p role="alert" className="text-xs" style={{ color: "var(--danger)" }}>
               {error}
@@ -245,13 +349,42 @@ export function InterviewChat({
             className="mono flex-1 resize-none rounded-md border px-3 py-2 text-sm outline-none disabled:opacity-60"
             style={{ background: "var(--bg-inset)", borderColor: "var(--border)", color: "var(--fg)" }}
           />
-          <button
+          <motion.button
             type="submit"
             disabled={loading || !input.trim()}
-            className="rounded-md px-4 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            whileHover={loading || !input.trim() ? undefined : { x: 1 }}
+            whileTap={loading || !input.trim() ? undefined : { scale: 0.97 }}
+            className="group rounded-md px-4 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
             style={{ background: "var(--accent)", color: "var(--accent-fg)" }}
           >
-            Send
+            {loading && messages.length > 0 ? (
+              <>
+                <motion.span
+                  className="size-3 rounded-full border-2 border-current border-t-transparent"
+                  animate={reduceMotion ? { opacity: [1, 0.4, 1] } : { rotate: 360 }}
+                  transition={reduceMotion ? { duration: 1.1, repeat: Infinity } : { duration: 0.7, repeat: Infinity, ease: "linear" }}
+                  aria-hidden
+                />
+                Analyzing…
+              </>
+            ) : (
+              <>
+                Send
+                <span className="inline-block transition-transform group-hover:translate-x-0.5" aria-hidden>
+                  →
+                </span>
+              </>
+            )}
+          </motion.button>
+          <button
+            type="button"
+            onClick={skip}
+            disabled={loading}
+            title="Skip this question — say you don't know it and move on"
+            className="mono text-xs px-3 py-2 rounded-md border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:border-[var(--warn)]"
+            style={{ borderColor: "var(--border)", color: "var(--fg-dim)" }}
+          >
+            Skip
           </button>
         </form>
       </TerminalShell>
@@ -273,6 +406,10 @@ export function InterviewChat({
         </summary>
         <RoadmapTrail plan={plan} progress={progress} />
       </details>
+
+      <div className="lg:col-span-2">
+        <JudgeMode evaluations={progress?.evaluations ?? []} open={judgeMode} />
+      </div>
     </div>
   );
 }
