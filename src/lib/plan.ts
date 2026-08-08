@@ -7,7 +7,7 @@ import type { Candidate, Mission, MissionBucket, PlanTopic } from "./types";
 const TARGET_ANCHORS = 6;
 const MIN_DISTINCT_DAYS = 5;
 
-function bucketMission(m: Mission): MissionBucket {
+export function bucketMission(m: Mission): MissionBucket {
   if (m.skipped) return "skipped";
   if (m.passed === false) return "failed";
   // passed === true, or a mission record with neither flag set (treat as passed)
@@ -40,6 +40,13 @@ function toPlanTopic(item: Bucketed, reasonOverride?: string): PlanTopic {
     curriculumDay,
     reason: reasonOverride ?? reasonFor(item.bucket, title, item.mission.attempts),
   };
+}
+
+/** Quick per-bucket counts, used by the candidate picker card UI. */
+export function summarizeCandidate(candidate: Candidate) {
+  const counts = { confident: 0, struggled: 0, failed: 0, skipped: 0 };
+  for (const m of candidate.missions ?? []) counts[bucketMission(m)]++;
+  return counts;
 }
 
 /**
@@ -92,7 +99,6 @@ export function buildInterviewPlan(candidate: Candidate): PlanTopic[] {
     .filter((b) => !usedDays.has(b.mission.day) && b.mission.day !== capstone?.mission.day)
     .sort((a, b) => a.mission.day - b.mission.day);
 
-  const coreSlotsAvailable = TARGET_ANCHORS - picked.length - (capstone ? 1 : 0);
   for (const item of richPool) {
     if (picked.length >= TARGET_ANCHORS - (capstone ? 1 : 0)) break;
     if (usedDays.has(item.mission.day)) continue;

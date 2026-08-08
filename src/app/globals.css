@@ -1,26 +1,123 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg: #ffffff;
+  --bg-elevated: #f6f8fa;
+  --bg-inset: #eef1f4;
+  --fg: #1f2328;
+  --fg-dim: #57606a;
+  --border: #d0d7de;
+  --accent: #1a7f37; /* git-add green */
+  --accent-fg: #ffffff;
+  --accent-2: #0969da; /* link blue */
+  --danger: #cf222e; /* git-del red */
+  --warn: #9a6700; /* amber, "struggled" */
+  --skip: #6e7781; /* neutral grey, "skipped" */
+  --shadow: 0 1px 0 rgba(31, 35, 40, 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #0a0e14;
+    --bg-elevated: #10151d;
+    --bg-inset: #161c26;
+    --fg: #e6edf3;
+    --fg-dim: #8b949e;
+    --border: #232938;
+    --accent: #3fb950;
+    --accent-fg: #04150a;
+    --accent-2: #58a6ff;
+    --danger: #f85149;
+    --warn: #d29922;
+    --skip: #6e7681;
+    --shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
   }
 }
 
+/* Explicit theme override (e.g. a future in-app toggle) wins over system preference */
+:root[data-theme="dark"] {
+  --bg: #0a0e14;
+  --bg-elevated: #10151d;
+  --bg-inset: #161c26;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --border: #232938;
+  --accent: #3fb950;
+  --accent-fg: #04150a;
+  --accent-2: #58a6ff;
+  --danger: #f85149;
+  --warn: #d29922;
+  --skip: #6e7681;
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-elevated: #f6f8fa;
+  --bg-inset: #eef1f4;
+  --fg: #1f2328;
+  --fg-dim: #57606a;
+  --border: #d0d7de;
+  --accent: #1a7f37;
+  --accent-fg: #ffffff;
+  --accent-2: #0969da;
+  --danger: #cf222e;
+  --warn: #9a6700;
+  --skip: #6e7781;
+  --shadow: 0 1px 0 rgba(31, 35, 40, 0.06);
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+/* Visible, high-contrast focus ring everywhere — never suppressed */
+:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.mono {
+  font-family: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* Thin scrollbars that still meet contrast in both themes */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

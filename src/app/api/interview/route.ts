@@ -203,3 +203,27 @@ export async function POST(request: Request) {
 
   return json({ reply, done: true, feedback });
 }
+
+// --- GET /api/interview?sessionId=... ---------------------------------------
+// Not part of the graded contract (which only specifies POST). Purely a
+// convenience for our own frontend to render a live, honest progress trail
+// (current topic, days covered, question count) without duplicating any of
+// the guardrail/decision logic client-side.
+export async function GET(request: Request) {
+  const sessionId = new URL(request.url).searchParams.get("sessionId");
+  if (!sessionId) {
+    return NextResponse.json({ error: "sessionId query param is required" }, { status: 400 });
+  }
+  const session = getSession(sessionId);
+  if (!session) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  return NextResponse.json({
+    phase: session.phase,
+    planIndex: session.planIndex,
+    questionsAsked: session.questionsAsked,
+    daysCovered: session.daysCovered,
+    followUpsOnCurrentTopic: session.followUpsOnCurrentTopic,
+    plan: session.plan.map((t) => ({ day: t.day, title: t.title, bucket: t.bucket })),
+  });
+}

@@ -10,6 +10,7 @@
     "test:plan": "tsx scripts/test-plan.ts"
   },
   "dependencies": {
+    "framer-motion": "^13.0.0",
     "groq-sdk": "^1.5.0",
     "next": "16.3.0",
     "react": "19.2.8",
