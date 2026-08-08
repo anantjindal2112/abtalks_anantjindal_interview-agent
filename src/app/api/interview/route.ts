@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildInterviewPlan } from "@/lib/plan";
-import { getFeedback, getNextTurn, type TurnDecision } from "@/lib/groq";
+import { getFeedback, getNextTurn, type TurnDecision } from "@/lib/llm";
 import { getSession, saveSession } from "@/lib/store";
 import { checkRateLimit, clientKeyFrom } from "@/lib/rateLimit";
 import type { Assessment, Candidate, DecisionLabel, InterviewResponse, PlanTopic, SessionState } from "@/lib/types";
