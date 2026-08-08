@@ -93,8 +93,9 @@ export async function getNextTurn(
     const raw = await callGroq(messages, { temperature: 0.75 });
     const parsed = safeParseJson<TurnDecision>(raw);
     if (parsed && isTurnDecision(parsed)) return sanitizeTurnDecision(parsed);
-  } catch {
-    // fall through to deterministic fallback below
+    console.error("[groq] getNextTurn: response failed shape/parse check, falling back:", raw);
+  } catch (err) {
+    console.error("[groq] getNextTurn: call failed, falling back:", err);
   }
   return fallbackTurn(session, isOpening);
 }
@@ -114,8 +115,9 @@ export async function getFeedback(
     const raw = await callGroq(messages, { temperature: 0.4 });
     const parsed = safeParseJson<FeedbackResult>(raw);
     if (parsed && isFeedback(parsed)) return sanitizeFeedback(parsed);
-  } catch {
-    // fall through
+    console.error("[groq] getFeedback: response failed shape/parse check, falling back:", raw);
+  } catch (err) {
+    console.error("[groq] getFeedback: call failed, falling back:", err);
   }
   return fallbackFeedback(session);
 }

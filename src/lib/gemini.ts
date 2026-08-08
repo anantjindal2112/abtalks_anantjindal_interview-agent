@@ -95,8 +95,9 @@ export async function getNextTurn(
     const raw = await callGemini(system, contents, { temperature: 0.75 });
     const parsed = safeParseJson<TurnDecision>(raw);
     if (parsed && isTurnDecision(parsed)) return sanitizeTurnDecision(parsed);
-  } catch {
-    // fall through to deterministic fallback below
+    console.error("[gemini] getNextTurn: response failed shape/parse check, falling back:", raw);
+  } catch (err) {
+    console.error("[gemini] getNextTurn: call failed, falling back:", err);
   }
   return fallbackTurn(session, isOpening);
 }
@@ -115,8 +116,9 @@ export async function getFeedback(
     const raw = await callGemini(system, contents, { temperature: 0.4 });
     const parsed = safeParseJson<FeedbackResult>(raw);
     if (parsed && isFeedback(parsed)) return sanitizeFeedback(parsed);
-  } catch {
-    // fall through
+    console.error("[gemini] getFeedback: response failed shape/parse check, falling back:", raw);
+  } catch (err) {
+    console.error("[gemini] getFeedback: call failed, falling back:", err);
   }
   return fallbackFeedback(session);
 }
