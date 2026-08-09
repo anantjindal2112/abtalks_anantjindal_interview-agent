@@ -122,6 +122,8 @@ export type SessionState = {
   phase: InterviewPhase;
   difficulty: number; // 1-5, adjusted from assessment signal each turn
   skipCount: number; // candidate-initiated "I don't know" skips; 2nd+ forces a difficulty penalty in code
+  skipsOnCurrentTopic: number; // resets on topic change; >2 forces the topic to be abandoned (see MAX_SKIPS_PER_TOPIC in route.ts)
+  zeroedTopics: { day: number; title: string }[]; // topics abandoned after 3+ skips — guaranteed a 0/gap in the final feedback, never left to model discretion
   createdAt: number;
   completedAt?: number;
   feedback?: Feedback; // cached once the interview concludes, so repeat calls don't re-generate

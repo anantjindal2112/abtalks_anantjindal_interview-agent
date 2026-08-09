@@ -4,13 +4,8 @@ import { useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { sampleCandidates } from "@/lib/data";
 import { summarizeCandidate } from "@/lib/plan";
+import { validateCandidateJson } from "@/lib/validateCandidate";
 import type { Candidate } from "@/lib/types";
-
-function isCandidateShape(x: unknown): x is Candidate {
-  if (!x || typeof x !== "object") return false;
-  const c = x as Record<string, unknown>;
-  return !!c.member && typeof c.member === "object" && Array.isArray(c.missions);
-}
 
 const BUCKET_LABEL: Record<string, string> = {
   confident: "passed first-try",
@@ -25,6 +20,60 @@ const PROFILE_LABEL: Record<string, string> = {
   failed: "rough patches",
   skipped: "selective",
 };
+
+// Paste-into-any-LLM template for generating a valid candidate.json from
+// scratch — the advanced panel's "no candidate.json handy" escape hatch.
+// Kept in sync with the Candidate type in src/lib/types.ts by hand (small
+// enough surface that a generated-from-schema step would be overkill here).
+const CANDIDATE_JSON_PROMPT = `Generate ONE fake candidate profile as a single JSON object for a fictional graduate of "The AI Cohort", a 31-day enterprise AI engineering bootcamp (RAG, vector databases, prompt engineering, agentic AI, MCP, production AI deployment).
+
+Output ONLY the JSON object — no markdown fences, no commentary — matching exactly this shape:
+
+{
+  "member": {
+    "id": "CAND-XXX",
+    "name": "Full Name",
+    "jobRole": "their day job, e.g. Backend Engineer",
+    "yearsExperience": <number>,
+    "education": "e.g. BS Computer Science",
+    "status": "COMPLETED"
+  },
+  "missions": [
+    { "day": <1-31>, "title": "short mission title", "passed": true, "attempts": <1-5> }
+    // one entry per curriculum day they attempted — mix outcomes realistically:
+    // some { "passed": true, "attempts": 1 } (easy pass), some with "attempts": 3+
+    // (struggled), some { "passed": false } (failed), some { "skipped": true }
+  ],
+  "signals": {
+    "commitDays": <number of distinct days they were active>,
+    "missionsCompleted": <count of missions with passed:true>,
+    "missionsFirstTry": <count of missions with passed:true and attempts:1>
+  }
+}
+
+Cover at least 20-25 of the 31 days, with a believable mix of confident passes, struggled-but-passed, failed, and skipped missions — not all-perfect and not all-failing. Make the numbers in "signals" actually consistent with the "missions" array you generate.`;
+
+function CopyPromptButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1600);
+        } catch {
+          setCopied(false);
+        }
+      }}
+      className="mono text-[10px] rounded px-2 py-1 border cursor-pointer shrink-0"
+      style={{ borderColor: "var(--border)", color: "var(--fg-dim)" }}
+    >
+      {copied ? "copied ✓" : "copy prompt"}
+    </button>
+  );
+}
 
 const BUCKET_SEGMENTS: Array<[string, string]> = [
   ["confident", "var(--accent)"],
@@ -161,24 +210,98 @@ function CandidateCard({
   );
 }
 
+/**
+ * Shown after a pasted candidate.json passes validation, before it's
+ * actually used to start an interview (and spend an LLM call) — a chance to
+ * eyeball that the data parsed the way the author intended (right name,
+ * plausible mission mix) rather than discovering a typo mid-interview.
+ */
+function CandidatePreviewCard({
+  candidate,
+  onConfirm,
+  onBack,
+}: {
+  candidate: Candidate;
+  onConfirm: () => void;
+  onBack: () => void;
+}) {
+  const counts = summarizeCandidate(candidate);
+  const profile = PROFILE_LABEL[dominantBucket(counts)];
+  return (
+    <div className="mt-3 rounded-lg border p-4" style={{ borderColor: "var(--accent-2)", background: "var(--bg-inset)" }}>
+      <p className="mono text-[10px] uppercase tracking-wide" style={{ color: "var(--accent-2)" }}>
+        preview — nothing started yet
+      </p>
+      <div className="mt-2 flex items-baseline justify-between gap-2">
+        <span className="font-medium text-sm" style={{ color: "var(--fg)" }}>
+          {candidate.member.name}
+        </span>
+        <span className="mono text-[11px]" style={{ color: "var(--fg-dim)" }}>
+          {candidate.member.id}
+        </span>
+      </div>
+      <div className="text-xs mt-0.5 flex items-center gap-1.5 flex-wrap" style={{ color: "var(--fg-dim)" }}>
+        <span>
+          {candidate.member.jobRole} · {candidate.member.yearsExperience}y exp
+        </span>
+        <span className="mono text-[9px] rounded-full border px-1.5 py-0.5" style={{ borderColor: "var(--border)", color: "var(--fg-dim)" }}>
+          {profile}
+        </span>
+      </div>
+      <div className="mt-3">
+        <BucketBar candidate={candidate} animate={false} />
+        <div className="mt-1.5 flex justify-between mono text-[10px]" style={{ color: "var(--fg-dim)" }}>
+          <span>{candidate.missions.length} missions parsed</span>
+          <span>{candidate.signals.commitDays} commit days</span>
+          <span>{candidate.signals.missionsFirstTry} first-try</span>
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer"
+          style={{ background: "var(--accent)", color: "var(--accent-fg)" }}
+        >
+          Looks right — start interview
+        </button>
+        <button
+          type="button"
+          onClick={onBack}
+          className="rounded-md border px-3 py-1.5 text-xs font-medium cursor-pointer"
+          style={{ borderColor: "var(--border)", color: "var(--fg-dim)" }}
+        >
+          Back to edit
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function CandidatePicker({ onSelect }: { onSelect: (candidate: Candidate) => void }) {
   const reduceMotion = useReducedMotion();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [jsonInput, setJsonInput] = useState("");
-  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [jsonErrors, setJsonErrors] = useState<string[]>([]);
+  const [preview, setPreview] = useState<Candidate | null>(null);
 
   function submitCustomCandidate() {
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(jsonInput);
-      if (!isCandidateShape(parsed)) {
-        setJsonError("Valid JSON, but it's missing member/missions — check the candidate.json shape.");
-        return;
-      }
-      setJsonError(null);
-      onSelect(parsed);
+      parsed = JSON.parse(jsonInput);
     } catch {
-      setJsonError("That's not valid JSON.");
+      setJsonErrors(["That's not valid JSON."]);
+      setPreview(null);
+      return;
     }
+    const result = validateCandidateJson(parsed);
+    if (!result.valid) {
+      setJsonErrors(result.errors);
+      setPreview(null);
+      return;
+    }
+    setJsonErrors([]);
+    setPreview(result.candidate);
   }
 
   return (
@@ -218,32 +341,66 @@ export function CandidatePicker({ onSelect }: { onSelect: (candidate: Candidate)
             transition={{ duration: 0.2 }}
             className="mt-3 overflow-hidden"
           >
+            <div className="rounded-md border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-inset)" }}>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs" style={{ color: "var(--fg-dim)" }}>
+                  Don&apos;t have a candidate.json handy? Copy this prompt into ChatGPT, Claude, or any LLM — paste
+                  what it gives you into the box below.
+                </p>
+                <CopyPromptButton text={CANDIDATE_JSON_PROMPT} />
+              </div>
+              <pre className="mono mt-2 max-h-28 overflow-y-auto whitespace-pre-wrap text-[10px] leading-relaxed" style={{ color: "var(--fg-dim)" }}>
+                {CANDIDATE_JSON_PROMPT}
+              </pre>
+            </div>
+
+            <details className="mt-3 text-xs" style={{ color: "var(--fg-dim)" }}>
+              <summary className="cursor-pointer mono text-[11px]" style={{ color: "var(--fg)" }}>
+                required fields, if you&apos;re writing it by hand
+              </summary>
+              <ul className="mt-2 flex flex-col gap-1 pl-4 list-disc mono text-[10px] leading-relaxed">
+                <li><code>member.id</code>, <code>member.name</code>, <code>member.jobRole</code>, <code>member.yearsExperience</code>, <code>member.education</code>, <code>member.status</code> — all required strings/number</li>
+                <li><code>missions[]</code> — at least one entry, each with <code>day</code> (1-31) and <code>title</code>; then one of <code>passed: true</code>, <code>passed: false</code>, or <code>skipped: true</code>, plus <code>attempts</code> (number, omit for skipped)</li>
+                <li><code>signals.commitDays</code>, <code>signals.missionsCompleted</code>, <code>signals.missionsFirstTry</code> — all numbers</li>
+              </ul>
+            </details>
+
             <label htmlFor="candidate-json-input" className="sr-only">
               Candidate JSON
             </label>
             <textarea
               id="candidate-json-input"
               value={jsonInput}
-              onChange={(e) => setJsonInput(e.target.value)}
+              onChange={(e) => {
+                setJsonInput(e.target.value);
+                if (preview) setPreview(null); // editing after a confirmed preview invalidates it
+              }}
               placeholder='{"member": {...}, "missions": [...], "signals": {...}}'
               rows={4}
-              className="mono w-full resize-y rounded-md border px-3 py-2 text-xs outline-none"
+              className="mono mt-3 w-full resize-y rounded-md border px-3 py-2 text-xs outline-none"
               style={{ background: "var(--bg-inset)", borderColor: "var(--border)", color: "var(--fg)" }}
             />
-            {jsonError && (
-              <p role="alert" className="mt-1.5 text-xs" style={{ color: "var(--danger)" }}>
-                {jsonError}
-              </p>
+            {jsonErrors.length > 0 && (
+              <ul role="alert" className="mt-1.5 flex flex-col gap-0.5 text-xs" style={{ color: "var(--danger)" }}>
+                {jsonErrors.map((e, i) => (
+                  <li key={i}>· {e}</li>
+                ))}
+              </ul>
             )}
-            <button
-              type="button"
-              onClick={submitCustomCandidate}
-              disabled={!jsonInput.trim()}
-              className="mt-2 rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              style={{ background: "var(--accent)", color: "var(--accent-fg)" }}
-            >
-              Start interview with this candidate
-            </button>
+            {!preview && (
+              <button
+                type="button"
+                onClick={submitCustomCandidate}
+                disabled={!jsonInput.trim()}
+                className="mt-2 rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                style={{ background: "var(--accent)", color: "var(--accent-fg)" }}
+              >
+                Validate &amp; preview
+              </button>
+            )}
+            {preview && (
+              <CandidatePreviewCard candidate={preview} onConfirm={() => onSelect(preview)} onBack={() => setPreview(null)} />
+            )}
           </motion.div>
         )}
       </div>

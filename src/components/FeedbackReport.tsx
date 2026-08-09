@@ -85,21 +85,37 @@ function Section({
         <span aria-hidden>{icon}</span> {title}
       </h3>
       <ul className="mt-2 flex flex-col gap-1.5">
-        {items.map((item, i) => (
-          <motion.li
-            key={i}
-            initial={reduceMotion ? false : { opacity: 0, x: -6 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: reduceMotion ? 0 : delayBase + i * 0.08, duration: 0.25 }}
-            className="text-sm leading-relaxed pl-4 relative"
-            style={{ color: "var(--fg)" }}
-          >
-            <span className="absolute left-0" style={{ color }} aria-hidden>
-              {icon === "✓" ? "+" : icon === "⚠" ? "!" : "→"}
-            </span>
-            {item}
-          </motion.li>
-        ))}
+        {items.map((item, i) => {
+          const itemDelay = delayBase + i * 0.08;
+          return (
+            <motion.li
+              key={i}
+              initial={reduceMotion ? false : { opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: reduceMotion ? 0 : itemDelay, duration: 0.25 }}
+              className="text-sm leading-relaxed pl-4 pr-1.5 py-0.5 -mx-1.5 relative rounded"
+              style={{ color: "var(--fg)" }}
+            >
+              {/* A patch actually "landing" — a tinted line-highlight that
+                  flashes in with the text and fades out shortly after,
+                  like a diff hunk applying, instead of a plain silent fade. */}
+              {!reduceMotion && (
+                <motion.span
+                  aria-hidden
+                  className="absolute inset-0 rounded pointer-events-none"
+                  initial={{ opacity: 0.85 }}
+                  animate={{ opacity: 0 }}
+                  transition={{ delay: itemDelay + 0.15, duration: 0.5, ease: "easeOut" }}
+                  style={{ background: `color-mix(in srgb, ${color} 20%, transparent)` }}
+                />
+              )}
+              <span className="absolute left-0" style={{ color }} aria-hidden>
+                {icon === "✓" ? "+" : icon === "⚠" ? "!" : "→"}
+              </span>
+              <span className="relative">{item}</span>
+            </motion.li>
+          );
+        })}
       </ul>
     </div>
   );

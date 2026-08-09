@@ -1,135 +1,33 @@
 import { NextResponse } from "next/server";
 import { buildInterviewPlan } from "@/lib/plan";
-import { getFeedback, getNextTurn, type TurnDecision } from "@/lib/llm";
+import { getFeedback, getNextTurn } from "@/lib/llm";
 import { getSession, saveSession } from "@/lib/store";
 import { checkRateLimit, clientKeyFrom } from "@/lib/rateLimit";
-import type { Assessment, Candidate, DecisionLabel, InterviewResponse, PlanTopic, SessionState } from "@/lib/types";
+import {
+  applyResolvedTurn,
+  applyZeroedTopicPenalties,
+  INITIAL_DIFFICULTY,
+  topicMeta,
+} from "@/lib/guardrails";
+import { reconcileCategoryScores } from "@/lib/feedbackAccuracy";
+import type { Candidate, InterviewResponse, SessionState } from "@/lib/types";
 
-const MIN_QUESTIONS = 8;
-const MIN_DAYS = 4;
-const MAX_FOLLOW_UPS_PER_TOPIC = 2;
-const HARD_QUESTION_CAP = 13;
-const INITIAL_DIFFICULTY = 2; // 1-5 scale, start slightly below middle and ramp with evidence
 const MAX_MESSAGE_LENGTH = 4000; // generous for a spoken-interview-style answer, cheap abuse guard
-
-/**
- * Deterministic difficulty adjustment from the model's own assessment of the
- * answer that just happened — not a second opinion, not model-reported, just
- * a bounded (1-5) derivation of the same correctness/depth numbers already
- * being validated elsewhere. Absent assessment (e.g. opening turn) leaves it
- * unchanged.
- */
-function updateDifficulty(current: number, assessment: Assessment | null | undefined): number {
-  if (!assessment) return current;
-  const avg = (assessment.correctness + assessment.depth) / 2;
-  const delta = avg >= 8 ? 1 : avg <= 4 ? -1 : 0;
-  return Math.max(1, Math.min(5, current + delta));
-}
 
 function json(body: InterviewResponse, status = 200) {
   return NextResponse.json(body, { status });
 }
 
-// --- deterministic guardrail state, recomputed fresh every turn -----------
-
-type Guardrails = {
-  isLastTopic: boolean;
-  minQuestionsMet: boolean;
-  minDaysMet: boolean;
-  concludeAllowed: boolean;
-  followUpAllowed: boolean;
-  hardCapReached: boolean;
-};
-
-function computeGuardrails(session: SessionState): Guardrails {
-  const isLastTopic = session.planIndex === session.plan.length - 1;
-  const minQuestionsMet = session.questionsAsked >= MIN_QUESTIONS;
-  const minDaysMet = session.daysCovered.length >= MIN_DAYS;
-  return {
-    isLastTopic,
-    minQuestionsMet,
-    minDaysMet,
-    concludeAllowed: isLastTopic && minQuestionsMet && minDaysMet,
-    followUpAllowed: session.followUpsOnCurrentTopic < MAX_FOLLOW_UPS_PER_TOPIC,
-    hardCapReached: session.questionsAsked >= HARD_QUESTION_CAP,
-  };
-}
-
-type ResolvedAction = "follow_up" | "next_topic" | "conclude";
-
 /**
- * Maps the model's requested action onto the nearest action that's actually
- * allowed given the hard requirements (>=8 questions, >=4 days) and caps
- * (<=2 follow-ups/topic, <=13 questions total). This is the mechanism that
- * makes those requirements reliable regardless of what the LLM decides.
+ * The single place both getFeedback call sites route their raw result
+ * through: guarantee zeroed topics show up as explicit gaps, then ground
+ * categoryScores against the real per-turn evidence rather than trusting one
+ * LLM call's numbers outright. See applyZeroedTopicPenalties / reconcileCategoryScores.
  */
-function resolveAction(modelAction: ResolvedAction, g: Guardrails): { action: ResolvedAction; corrected: boolean } {
-  let action = modelAction;
-
-  if (action === "conclude" && !g.concludeAllowed) {
-    action = g.isLastTopic ? (g.followUpAllowed ? "follow_up" : "next_topic") : "next_topic";
-  }
-  if (action === "follow_up" && !g.followUpAllowed) {
-    action = "next_topic";
-  }
-  if (action === "next_topic" && g.isLastTopic) {
-    // No more topics to advance to. If minimums aren't met yet, squeeze in
-    // one more follow-up (ignoring the per-topic cap as an emergency valve —
-    // hitting the contractual minimum wins over the soft cap) instead of
-    // conceding it can only be a normal "no more topics" outcome.
-    action = g.minQuestionsMet && g.minDaysMet ? "conclude" : "follow_up";
-  }
-  if (g.hardCapReached) {
-    action = "conclude";
-  }
-
-  return { action, corrected: action !== modelAction };
+function finalizeFeedback(feedback: Awaited<ReturnType<typeof getFeedback>>, session: SessionState) {
+  const withGaps = applyZeroedTopicPenalties(feedback, session);
+  return { ...withGaps, categoryScores: reconcileCategoryScores(withGaps.categoryScores, session) };
 }
-
-function deterministicReply(action: ResolvedAction, session: SessionState): string {
-  const topic = session.plan[session.planIndex];
-  if (action === "follow_up") {
-    return `Can you go a bit deeper on that — specifically, what made "${topic.title}" work (or not work) the way it did?`;
-  }
-  if (action === "conclude") {
-    return "That covers everything I wanted to ask. Thanks for walking me through your work — your feedback is coming up now.";
-  }
-  const next = session.plan[session.planIndex + 1];
-  return `Thanks — let's move on. Tell me about "${next.title}": ${
-    next.curriculumDay?.objectives?.[0] ?? "what did you build and how did it work?"
-  }`;
-}
-
-function fallbackDecisionLabel(action: ResolvedAction): DecisionLabel {
-  if (action === "follow_up") return "DEEPEN";
-  if (action === "next_topic") return "SWITCH_TOPIC";
-  return "CONCLUDE";
-}
-
-function topicMeta(
-  topic: PlanTopic,
-  isFollowUp: boolean,
-  extra: { decision: TurnDecision; action: ResolvedAction; corrected: boolean; difficulty: number }
-) {
-  const { decision, action, corrected, difficulty } = extra;
-  return {
-    day: topic.day,
-    topicTitle: topic.title,
-    isFollowUp,
-    assessment: decision.assessment ?? undefined,
-    difficulty,
-    // If the guardrail overrode the model's action, its own decision/reasoning
-    // no longer describes what actually happened — show an honest override
-    // note instead of a mismatched narrative (e.g. model said CONCLUDE, code
-    // forced follow_up to hit the coverage minimum).
-    decisionLabel: corrected ? fallbackDecisionLabel(action) : decision.decision,
-    reasoning: corrected
-      ? "Coverage guardrail: continuing until the minimum question/day requirements are met, regardless of the model's preference here."
-      : decision.reasoning,
-  };
-}
-
-// --- request handling -------------------------------------------------------
 
 function isCandidate(x: unknown): x is Candidate {
   if (!x || typeof x !== "object") return false;
@@ -186,6 +84,8 @@ export async function POST(request: Request) {
       phase: "warmup",
       difficulty: INITIAL_DIFFICULTY,
       skipCount: 0,
+      skipsOnCurrentTopic: 0,
+      zeroedTopics: [],
       createdAt: Date.now(),
     };
 
@@ -228,7 +128,7 @@ export async function POST(request: Request) {
   // Explicit early-end escape hatch — not advertised to real candidates (no
   // UI copy tells them this exists), and unreachable by the graded contract
   // (that only ever sends {sessionId, message}, never this flag). It exists
-  // for testing/demo convenience so a full run doesn't require 8-13 turns
+  // for testing/demo convenience so a full run doesn't require 8-12 turns
   // every time. Bypasses the coverage guardrail deliberately — but honestly:
   // every topic that was never reached gets counted as skipped, so the final
   // scoring reflects the real incompleteness rather than hiding it.
@@ -241,10 +141,13 @@ export async function POST(request: Request) {
     });
     session.phase = "done";
     session.completedAt = Date.now();
-    const feedback = await getFeedback(session, {
-      endedEarly: true,
-      unreachedTopics: remainingTopics.map((t) => t.title),
-    });
+    const feedback = finalizeFeedback(
+      await getFeedback(session, {
+        endedEarly: true,
+        unreachedTopics: remainingTopics.map((t) => t.title),
+      }),
+      session
+    );
     session.feedback = feedback;
     saveSession(session);
     return json({
@@ -265,53 +168,26 @@ export async function POST(request: Request) {
       ? b.message.slice(0, MAX_MESSAGE_LENGTH)
       : "";
   session.transcript.push({ role: "candidate", content: message });
-  if (isSkip) session.skipCount += 1;
+  if (isSkip) {
+    session.skipCount += 1;
+    session.skipsOnCurrentTopic += 1;
+  }
 
-  const guardrailsBefore = computeGuardrails(session);
   const decision = await getNextTurn(session, false, isSkip);
-  // Never let a skip lead to a follow-up on the very topic just skipped,
-  // regardless of what the model returned — same "don't trust the model for
-  // control flow" principle as the coverage guardrails below.
-  const modelAction = isSkip && decision.action === "follow_up" ? "next_topic" : decision.action;
-  const { action, corrected } = resolveAction(modelAction, guardrailsBefore);
-  const reply = corrected ? deterministicReply(action, session) : decision.reply;
+  // All control flow (skip 2-strike rule, coverage guardrails, difficulty,
+  // question-count bookkeeping) lives in applyResolvedTurn — this is the
+  // exact same function scripts/test-guardrails.ts exercises directly, so
+  // there's no separate "route.ts version" of this logic to drift out of sync.
+  const { reply, done } = applyResolvedTurn(session, decision, isSkip);
 
-  // Evaluation of the answer that just happened is trustworthy regardless of
-  // whether the control-flow action itself got overridden below.
-  session.difficulty = updateDifficulty(session.difficulty, decision.assessment);
-  // Guaranteed consequence for repeated skipping — a code-enforced floor, not
-  // just hoping the model's assessment naturally scores it low enough.
-  if (isSkip && session.skipCount >= 2) {
-    session.difficulty = Math.max(1, session.difficulty - 1);
-  }
-  const metaExtra = { decision, action, corrected, difficulty: session.difficulty };
-
-  if (action === "follow_up") {
-    const topic = session.plan[session.planIndex];
-    session.transcript.push({ role: "interviewer", content: reply, meta: topicMeta(topic, true, metaExtra) });
-    session.questionsAsked += 1;
-    session.followUpsOnCurrentTopic += 1;
-    saveSession(session);
-    return json({ reply, done: false });
-  }
-
-  if (action === "next_topic") {
-    session.planIndex += 1;
-    const topic = session.plan[session.planIndex];
-    session.transcript.push({ role: "interviewer", content: reply, meta: topicMeta(topic, false, metaExtra) });
-    session.questionsAsked += 1;
-    session.followUpsOnCurrentTopic = 0;
-    if (!session.daysCovered.includes(topic.day)) session.daysCovered.push(topic.day);
-    session.phase = session.planIndex === session.plan.length - 1 ? "capstone" : "core";
+  if (!done) {
     saveSession(session);
     return json({ reply, done: false });
   }
 
   // action === "conclude"
-  session.transcript.push({ role: "interviewer", content: reply });
-  session.phase = "done";
   session.completedAt = Date.now();
-  const feedback = await getFeedback(session);
+  const feedback = finalizeFeedback(await getFeedback(session), session);
   session.feedback = feedback;
   saveSession(session);
 

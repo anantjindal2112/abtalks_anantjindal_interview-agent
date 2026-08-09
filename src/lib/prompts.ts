@@ -67,14 +67,24 @@ Vary your phrasing. Each topic lists a suggested angle — use it, or a differen
 "reply" is exactly what gets shown to the candidate — never include the action, decision, reasoning, assessment, scoring, or any meta-commentary inside it.`;
 }
 
+// Mirrors MAX_SKIPS_PER_TOPIC in route.ts — this file only builds prompt
+// text, route.ts is what actually enforces the rule in code, so the number
+// is duplicated (same pattern as the 8/4/12 constants below) rather than
+// importing across the API-route boundary.
+const MAX_SKIPS_PER_TOPIC = 2;
+
 export function buildStateBlock(session: SessionState, isSkip = false): string {
   const topic = session.plan[session.planIndex];
   const isLastTopic = session.planIndex === session.plan.length - 1;
   const minQuestionsMet = session.questionsAsked >= 8;
   const minDaysMet = session.daysCovered.length >= 4;
   const concludeAllowed = isLastTopic && minQuestionsMet && minDaysMet;
-  const followUpAllowed = session.followUpsOnCurrentTopic < 2;
-  const hardCapReached = session.questionsAsked >= 13;
+  // A skip retry (1st/2nd skip on this topic) is exempt from the normal
+  // per-topic follow-up cap — it has its own dedicated 2-strike budget, see
+  // the isSkip block below.
+  const isSkipRetry = isSkip && session.skipsOnCurrentTopic <= MAX_SKIPS_PER_TOPIC;
+  const followUpAllowed = session.followUpsOnCurrentTopic < 2 || isSkipRetry;
+  const hardCapReached = session.questionsAsked >= 12;
 
   return `CURRENT STATE
 Current topic (index ${session.planIndex + 1} of ${session.plan.length}): Day ${topic.day} — "${topic.title}" [${topic.bucket}] — ${topic.reason}
@@ -89,7 +99,9 @@ ${
 }
 ${
   isSkip
-    ? `The candidate explicitly SKIPPED this question — they said they don't know it, not a real answer. Acknowledge it warmly and briefly like a real interviewer would ("No worries, let's move on" / "That's alright, happens to everyone" — vary it, don't reuse the same line every time), then move to the next planned topic. You MUST use action "next_topic" (or "conclude" if that's explicitly allowed below) — never "follow_up" on a question they just said they don't know. For "assessment": correctness and depth should be low (1-2), missingConcepts should list what a real answer would have needed, misconception should be null (skipping isn't a misconception, it's an honest gap) — this is a genuine, real assessment of "no answer given," not a fabricated harsh score.\n`
+    ? session.skipsOnCurrentTopic > MAX_SKIPS_PER_TOPIC
+      ? `The candidate has now SKIPPED this SAME topic ${session.skipsOnCurrentTopic} times — they've had their chances on it. Acknowledge briefly and warmly like a real interviewer would (vary the line, don't reuse the same wording every time), then move on to the next planned topic. You MUST use action "next_topic" (or "conclude" if that's explicitly allowed below) — do not offer this topic again. For "assessment": correctness and depth must be 1 (rock bottom — this is a confirmed, repeated gap, not merely "unassessed"), missingConcepts should list what a real answer would have needed, misconception null.\n`
+      : `The candidate explicitly SKIPPED this question (skip ${session.skipsOnCurrentTopic} of ${MAX_SKIPS_PER_TOPIC} they get on this topic before it's abandoned) — they said they don't know it, not a real answer. Acknowledge it warmly and briefly like a real interviewer would ("No worries, let's come at it differently" — vary the line, don't reuse the same one every time), then ask a DIFFERENT question about the SAME topic — a genuinely different angle or sub-question, never a light reword or a deepening of the one they just skipped. You MUST use action "follow_up" and stay on this exact topic — do NOT use "next_topic" yet, they still get ${MAX_SKIPS_PER_TOPIC - session.skipsOnCurrentTopic + 1} more chance(s) on it first. For "assessment": correctness and depth should be low (1-2), missingConcepts should list what a real answer would have needed, misconception should be null (skipping isn't a misconception, it's an honest gap) — this is a genuine, real assessment of "no answer given," not a fabricated harsh score.\n`
     : ""
 }conclude is ${concludeAllowed ? "ALLOWED" : "NOT ALLOWED YET"} right now.${
     concludeAllowed
@@ -125,6 +137,12 @@ Ground every point in something that actually happened in the transcript — do 
 ${
   session.skipCount > 0
     ? `The candidate explicitly skipped ${session.skipCount} question(s) during this interview (said they didn't know the answer). This is a real, honest data point — factor it into gaps and category scores rather than ignoring it, but don't be needlessly harsh about it either; note specifically which topics were skipped if the transcript makes that clear.\n`
+    : ""
+}${
+  session.zeroedTopics.length > 0
+    ? `The candidate skipped these topics 3 times each and never gave a real answer on any of them — these are CONFIRMED zero-knowledge gaps, not "not enough signal": ${session.zeroedTopics
+        .map((t) => `Day ${t.day} "${t.title}"`)
+        .join(", ")}. Each MUST appear explicitly in "gaps" (score it as a hard 0, plainly stated), and weigh categoryScores accordingly — do not soften this into a generic "could improve" note.\n`
     : ""
 }${
     earlyEnd

@@ -11,22 +11,59 @@ Built for the Ab Talks Hackathon 2.0 against the spec in
 
 - Reads a candidate's `candidate.json` (missions passed/failed/skipped, attempt
   counts, commit-day signals) and builds a deterministic interview plan: a
-  warmup → chronological-core → capstone sequence covering **at least 6
+  warmup → chronological-core → capstone sequence covering **at least 5
   distinct days**, weighted toward topics the candidate struggled with or
   skipped rather than an easy victory lap.
 - Runs the interview as a real multi-turn conversation via a single LLM call
   per turn (Groq by default, Gemini as a swappable second provider — see
-  [Switching LLM providers](#switching-llm-providers)).
-- **Code-enforced guardrails**, not left to the model's discretion: the
-  ≥8-question / ≥4-distinct-day minimum, follow-up caps, and the "don't just
-  praise a wrong answer" rule are resolved in `route.ts`/`prompts.ts`, so a bad
-  LLM turn can never break the interview's shape.
-- Derives an adaptive difficulty score (1-5) and a decision label
+  [Reliability & resilience](#reliability--resilience)).
+- **Code-enforced guardrails**, not left to the model's discretion:
+  - **8–12 questions, ≥4 distinct days** — a floor *and* a ceiling. The model
+    can never wrap up early (forced to keep going until the minimum is met)
+    or drag on forever (hard-capped at 12; see `resolveAction()` in
+    [`src/lib/guardrails.ts`](src/lib/guardrails.ts)).
+  - **Skip handling has a real 2-strike rule.** Say "I don't know" once or
+    twice on the same topic and the interview stays on it, asking a
+    genuinely different question each time — never a reworded repeat. The
+    *third* skip abandons the topic and **guarantees** it shows up as an
+    explicit zero in the final feedback (`applyZeroedTopicPenalties()`),
+    never silently averaged away.
+  - A skip retry never inflates the question count — it replaces the
+    question it's answering for, it doesn't add a new one.
+  - "Don't just praise a wrong answer" is an explicit prompt rule, backed by
+    a real per-turn assessment (correctness/depth 1–10) the model can't skip.
+- Derives an adaptive difficulty score (1–5) and a decision label
   (`DEEPEN` / `CHALLENGE` / `CLARIFY` / `VERIFY_MISCONCEPTION` / `SWITCH_TOPIC`
   / `CONCLUDE`) per turn from the same call — no second LLM round-trip.
 - Ends with structured feedback: a summary, strengths, gaps, next steps, five
-  category scores, and any real misconceptions the candidate showed — never
-  fabricated; fields the model didn't confidently return are simply omitted.
+  category scores, and any real misconceptions the candidate showed.
+  **Category scores aren't just one LLM call's word** — they're reconciled
+  against the real per-turn correctness/depth data already collected across
+  the whole interview (`reconcileCategoryScores()` in
+  [`src/lib/feedbackAccuracy.ts`](src/lib/feedbackAccuracy.ts)), pulling an
+  inflated or hallucinated score back toward what actually happened, and
+  deterministically filling scores in if the model omits them — never blank,
+  never faked, never a second API call.
+- **Bring your own candidate**, safely: paste a candidate.json-shaped payload
+  into the picker's "advanced" panel and get field-level validation errors
+  (not one generic message) plus a preview card before an interview — and an
+  LLM call — actually starts. No candidate.json handy? A ready-made prompt in
+  that same panel generates one from scratch for any LLM to fill in.
+
+## Reliability & resilience
+
+This was built assuming the free-tier keys behind it *will* get rate-limited
+— the question was never "if," only "what happens when," and every layer
+below exists so the answer is "it keeps working," never "it 500s":
+
+| Layer | What happens |
+|---|---|
+| **Groq primary → backup key failover** | If the primary `GROQ_API_KEY` exhausts its retries on a 429/5xx, `groq.ts` automatically fails over to `GROQ_API_KEY_BACKUP` before giving up — roughly doubles real demo-day capacity with zero interview-logic changes. |
+| **Gemini as a fully swappable second provider** | `groq.ts` and `gemini.ts` implement an identical interface over shared validation logic (`llm-shared.ts`); flip `LLM_PROVIDER=gemini` in `.env.local` and `route.ts` never knows the difference. |
+| **Deterministic fallback, always** | If every provider call still fails, `fallbackTurn()`/`fallbackFeedback()` produce a plain, honest, on-contract response instead of erroring — the interview's guaranteed shape (8–12 questions, real feedback) never breaks, even with zero working API keys. |
+| **A lightweight rate limiter of our own** | `checkRateLimit()` protects the shared quota from a runaway script or retry loop — not from a determined attacker (the spec requires no auth), just from accidentally burning the free tier in minutes. |
+| **Two-tier session store** | In-memory (`globalThis`-backed, survives dev hot-reload) *backed by* a JSON file per session on disk — an interview survives a server restart, not just a code edit. On Vercel's read-only serverless filesystem it correctly falls back to `/tmp`, and degrades to in-memory-only (never crashes) if even that isn't writable. See [`src/lib/store.ts`](src/lib/store.ts). |
+| **300-run fuzz-tested control flow** | The guardrail engine (question caps, skip 2-strike rule, coverage minimums) is unit-tested against adversarial models and skip patterns in `scripts/test-guardrails.ts` — an actual infinite-loop bug was caught and fixed this way, not discovered live in front of a judge. Run it with `npm run test:guardrails`. |
 
 ## Tech stack
 
@@ -43,7 +80,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). Pick a bundled candidate
 (or paste your own `candidate.json`-shaped payload via the "advanced" panel on
-the picker screen) and start the interview.
+the picker screen — see [What it does](#what-it-does)) and start the interview.
 
 ### Environment variables
 
@@ -53,15 +90,19 @@ provider's API key:
 | Variable | Required | Notes |
 |---|---|---|
 | `GROQ_API_KEY` | yes, unless using Gemini | [console.groq.com](https://console.groq.com) |
-| `GROQ_API_KEY_BACKUP` | no | unused fallback slot for a second Groq key |
+| `GROQ_API_KEY_BACKUP` | no | automatic failover once the primary key's retries are exhausted — see [Reliability & resilience](#reliability--resilience) |
 | `GEMINI_API_KEY` | only if `LLM_PROVIDER=gemini` | [aistudio.google.com](https://aistudio.google.com/apikey) |
 | `GEMINI_MODEL` | no | defaults to `gemini-2.0-flash` |
 | `LLM_PROVIDER` | no | `groq` (default) or `gemini` |
 
+All free-tier — this project never requires a paid plan on any provider or host.
+
 ### Other scripts
 
 ```bash
-npm run test:plan   # verifies the plan builder against all 20 bundled candidates
+npm run test:plan        # verifies the plan builder against all 20 bundled candidates
+npm run test:guardrails  # 300-run fuzz test of the control-flow engine (no network calls)
+npm run test             # both of the above
 npm run lint
 npx tsc --noEmit
 ```
@@ -79,7 +120,7 @@ POST /api/interview
 **Turn:** `{ sessionId, message }` → `{ reply, done: false }`
 **End:** → `{ reply, done: true, feedback: { summary, strengths, gaps, next } }`
 
-Two non-contractual additions used only by this repo's own frontend (never
+Non-contractual additions used only by this repo's own frontend (never
 required or exercised by the graded contract, which only ever sends
 `{sessionId, candidate}` or `{sessionId, message}`):
 
@@ -87,7 +128,7 @@ required or exercised by the graded contract, which only ever sends
   evaluation trail, so the UI can render the roadmap/difficulty/judge-mode
   panels without a second LLM call.
 - `{ sessionId, message, skipped: true }` — candidate skips a question instead
-  of answering; 2nd+ skip applies a guaranteed difficulty penalty in code.
+  of answering; see the 2-strike rule under [What it does](#what-it-does).
 - `{ sessionId, endEarly: true }` — hidden testing escape hatch that ends the
   interview immediately; unreached topics are honestly counted as not-covered
   in the resulting feedback rather than hidden.
@@ -96,26 +137,35 @@ required or exercised by the graded contract, which only ever sends
 
 ```
 src/lib/
-  types.ts       contract-matching types (mirrors candidate.json/curriculum.json exactly)
-  data.ts        curriculum/candidate loaders
-  plan.ts        deterministic interview plan + learning-map builder
-  store.ts       in-memory session store (globalThis-backed, survives dev HMR)
-  prompts.ts     system + per-turn + feedback prompt builders
-  llm-shared.ts  provider-agnostic JSON validation/sanitization/fallback logic
-  groq.ts        Groq provider (implements getNextTurn/getFeedback)
-  gemini.ts      Gemini provider (same interface, swappable)
-  llm.ts         env-gated switchboard — route.ts only ever imports this
+  types.ts             contract-matching types (mirrors candidate.json/curriculum.json exactly)
+  data.ts              curriculum/candidate loaders
+  plan.ts              deterministic interview plan + learning-map builder
+  validateCandidate.ts field-level validation for a pasted candidate.json (UI-facing)
+  guardrails.ts        the control-flow engine: question/day minimums, skip 2-strike rule,
+                        difficulty, all pure and unit-tested (scripts/test-guardrails.ts)
+  feedbackAccuracy.ts  grounds category scores against real per-turn evidence, no extra LLM call
+  store.ts             two-tier session store (in-memory + disk, Vercel-/tmp/-aware)
+  prompts.ts           system + per-turn + feedback prompt builders
+  llm-shared.ts        provider-agnostic JSON validation/sanitization/fallback logic
+  groq.ts               Groq provider (implements getNextTurn/getFeedback), primary+backup key failover
+  gemini.ts             Gemini provider (same interface, swappable)
+  llm.ts                env-gated switchboard — route.ts only ever imports this
+  rateLimit.ts          lightweight quota protection, not auth
 src/app/api/interview/
-  route.ts       orchestration + guardrails (the graded endpoint)
-  records/route.ts  GET-only cohort insights aggregation (demo/BI bonus, not core product)
-src/components/  frontend (chat, learning-map, roadmap trail, feedback report, judge mode, ...)
+  route.ts              orchestration (the graded endpoint) — thin: delegates control flow to guardrails.ts
+  records/route.ts       GET-only cohort insights aggregation (demo/BI bonus, not core product)
+src/components/         frontend (chat, learning-map, roadmap trail, feedback report, judge mode, ...)
+scripts/
+  test-plan.ts           plan builder vs. all 20 bundled candidates
+  test-guardrails.ts     300-run fuzz test of the control-flow engine, zero network calls
 ```
 
 **Guardrail philosophy:** anything that must be reliable (question-count
-minimums, day coverage, skip penalties, "never fake a score") is resolved in
-code. The LLM's structured output is validated field-by-field — a malformed
-or missing field is dropped and degrades gracefully, never faked and never
-allowed to break the interview's guaranteed shape.
+minimums/ceiling, day coverage, skip consequences, category-score honesty,
+"never fake a score") is resolved in code and unit-tested, never left to the
+model's discretion. The LLM's structured output is validated field-by-field —
+a malformed or missing field is dropped and degrades gracefully, never faked
+and never allowed to break the interview's guaranteed shape.
 
 ## Switching LLM providers
 
@@ -141,8 +191,16 @@ provider is actually answering.
 
 ## Known limitations
 
-- Session state and Cohort Insights are in-memory only — they reset on
-  server restart. Fine for a demo, not for production.
+- Cohort Insights (the `/records` leaderboard) is in-memory only — it resets
+  on server restart. It's a demo/BI bonus, not core product, so this trade-off
+  is deliberate.
+- Interview session state now survives a restart via the two-tier disk-backed
+  store (see [Reliability & resilience](#reliability--resilience)) — but on a
+  true serverless host, concurrent invocations on different instances still
+  won't see each other's writes mid-interview. Fine for a single-demo-at-a-time
+  hackathon deployment; a real production deployment would still want
+  Redis/a DB.
 - Groq's free tier caps at 8,000 input tokens/minute — long interviews or
   rapid parallel demo sessions can hit this; the app degrades to a
-  deterministic fallback turn rather than erroring.
+  deterministic fallback turn (or the backup key, then Gemini if configured)
+  rather than erroring.

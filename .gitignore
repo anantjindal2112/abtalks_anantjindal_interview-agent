@@ -37,6 +37,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# persisted interview sessions (see src/lib/store.ts) — local dev/demo state,
+# never something to commit or ship
+/.sessions/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
