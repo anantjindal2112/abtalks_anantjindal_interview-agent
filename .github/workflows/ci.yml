@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint .
+
+      # All three suites are pure/offline — no GROQ_API_KEY or any other
+      # secret needed. test:plan checks the deterministic plan builder
+      # against all 20 bundled candidates; test:guardrails fuzz-tests the
+      # control-flow engine (question caps, skip 2-strike rule) 300 times;
+      # test:llm-shared unit-tests the model-response validation/sanitization
+      # layer both LLM providers share. None of them call an LLM.
+      - name: Tests (plan builder, guardrail fuzz, response sanitizers)
+        run: npm run test
+
+      # Confirms the app actually builds deployably — same command Vercel
+      # runs — with zero env vars set, matching this job's environment
+      # exactly and proving no secret is silently required at build time.
+      - name: Production build
+        run: npm run build
