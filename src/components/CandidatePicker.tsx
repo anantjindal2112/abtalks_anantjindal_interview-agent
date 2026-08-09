@@ -115,37 +115,56 @@ const CELL_COLOR: Record<string, string> = {
   none: "var(--border)",
 };
 
+// Day numbers sit ON TOP of the colored cell (not just in a tooltip) — white
+// with a dark drop-shadow reads fine against every saturated bucket color in
+// both themes; "none" cells use the theme's own dim text color instead,
+// since var(--border) can be light in the light theme and white-on-white
+// would vanish.
+const CELL_TEXT_STYLE: Record<string, React.CSSProperties> = {
+  confident: { color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.55)" },
+  struggled: { color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.55)" },
+  failed: { color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.55)" },
+  skipped: { color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.55)" },
+  none: { color: "var(--fg-dim)" },
+};
+
 /**
  * A 31-day, GitHub-contribution-style grid — the candidate's REAL mission
- * outcomes, one cell per curriculum day, sweeping in on hover/focus. Visually
- * answers "what does 'built from real history' actually mean" without a
- * word of copy. Pure CSS (:group-hover / :group-focus-within), not tied to
- * the card's JS tilt state, so it still works for keyboard focus and for
- * reduced-motion users (they just get an instant reveal, no stagger).
+ * outcomes, one cell per curriculum day (day number printed on the cell
+ * itself), sweeping in on hover/focus. Visually answers "what does 'built
+ * from real history' actually mean" without a word of copy. 11 columns (3
+ * rows, not 4) so the whole thing fits inside the card's own bounds instead
+ * of clipping against its overflow-hidden edge. Pure CSS (:group-hover /
+ * :group-focus-within), not tied to the card's JS tilt state, so it still
+ * works for keyboard focus and for reduced-motion users (they just get an
+ * instant reveal, no stagger).
  */
 function DayHeatmap({ candidate, reduceMotion }: { candidate: Candidate; reduceMotion: boolean | null }) {
   const cells = buildDayGrid(candidate);
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-center gap-2 rounded-lg p-4 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100"
+      className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-center gap-1 rounded-lg px-3 py-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100"
       style={{ background: "color-mix(in srgb, var(--bg-inset) 97%, transparent)" }}
     >
-      <div className="mono text-[9px] uppercase tracking-wide" style={{ color: "var(--fg-dim)" }}>
+      <div className="mono text-[7px] uppercase tracking-wide leading-none" style={{ color: "var(--fg-dim)" }}>
         31-day mission history
       </div>
-      <div className="grid grid-cols-8 gap-1">
+      <div className="grid grid-cols-16 gap-[2px]">
         {cells.map((c, i) => (
           <span
             key={c.day}
-            className="aspect-square rounded-[2px] opacity-0 scale-50 transition-all group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100"
+            className="mono flex aspect-square items-center justify-center rounded-[2px] text-[6.5px] leading-none opacity-0 scale-50 transition-all group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100"
             style={{
               background: CELL_COLOR[c.bucket],
-              transitionDuration: reduceMotion ? "0ms" : "260ms",
-              transitionDelay: reduceMotion ? "0ms" : `${i * 9}ms`,
+              ...CELL_TEXT_STYLE[c.bucket],
+              transitionDuration: reduceMotion ? "0ms" : "220ms",
+              transitionDelay: reduceMotion ? "0ms" : `${i * 6}ms`,
             }}
             title={`day ${c.day}${c.bucket !== "none" ? ` · ${c.bucket}` : ""}`}
-          />
+          >
+            {c.day}
+          </span>
         ))}
       </div>
     </div>
