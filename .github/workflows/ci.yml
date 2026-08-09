@@ -24,9 +24,6 @@ jobs:
       # even though the actual dependency tree resolves fine either way.
       - run: npm install
 
-      - name: Type check
-        run: npx tsc --noEmit
-
       - name: Lint
         run: npx eslint .
 
@@ -42,5 +39,9 @@ jobs:
       # Confirms the app actually builds deployably — same command Vercel
       # runs — with zero env vars set, matching this job's environment
       # exactly and proving no secret is silently required at build time.
-      - name: Production build
+      # Includes its own TypeScript check (Next.js needs its generated
+      # .next/types/ route/layout ambient types to exist first, which only
+      # `next build`/`next dev` produce — a standalone `tsc --noEmit` run
+      # before any build fails on those, e.g. LayoutProps in layout.tsx).
+      - name: Production build (includes type check)
         run: npm run build
