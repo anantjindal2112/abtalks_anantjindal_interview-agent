@@ -98,13 +98,13 @@ export async function POST(request: Request) {
     });
     session.questionsAsked = 1;
     session.daysCovered = [topic.day];
-    saveSession(session);
+    await saveSession(session);
 
     return json({ reply: decision.reply, done: false });
   }
 
   // --- Continue an existing interview ---
-  const session = getSession(sessionId);
+  const session = await getSession(sessionId);
   if (!session) {
     return json(
       { reply: "No active interview found for this sessionId. Start a new interview by sending a 'candidate' object.", done: false },
@@ -149,7 +149,7 @@ export async function POST(request: Request) {
       session
     );
     session.feedback = feedback;
-    saveSession(session);
+    await saveSession(session);
     return json({
       reply: "Understood — ending here. Thanks for the time so far; your feedback is coming up now.",
       done: true,
@@ -181,7 +181,7 @@ export async function POST(request: Request) {
   const { reply, done } = applyResolvedTurn(session, decision, isSkip);
 
   if (!done) {
-    saveSession(session);
+    await saveSession(session);
     return json({ reply, done: false });
   }
 
@@ -189,7 +189,7 @@ export async function POST(request: Request) {
   session.completedAt = Date.now();
   const feedback = finalizeFeedback(await getFeedback(session), session);
   session.feedback = feedback;
-  saveSession(session);
+  await saveSession(session);
 
   return json({ reply, done: true, feedback });
 }
@@ -204,7 +204,7 @@ export async function GET(request: Request) {
   if (!sessionId) {
     return NextResponse.json({ error: "sessionId query param is required" }, { status: 400 });
   }
-  const session = getSession(sessionId);
+  const session = await getSession(sessionId);
   if (!session) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }

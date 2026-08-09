@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { sessions } from "@/lib/store";
 
 // Not part of the graded contract — a judge/demo-facing view of every
-// interview actually completed on THIS server process (in-memory store, so
-// this resets on restart/redeploy, same caveat as the rest of the app's
-// state — honestly documented, not hidden). Real candidates never see this;
-// it's an aggregate insights view, not a feature of the candidate experience.
+// interview actually completed on THIS server process. Deliberately reads
+// only the local in-memory cache, even when Redis is configured for the
+// actual interview flow (see src/lib/store.ts) — this stays per-instance and
+// resets on restart/redeploy, same caveat as before, honestly documented
+// rather than hidden. It's a demo/BI bonus, not core product, so it doesn't
+// warrant the extra complexity of a cross-instance index. Real candidates
+// never see this; it's an aggregate insights view, not a feature of the
+// candidate experience.
 export async function GET() {
   const records = Array.from(sessions.values())
     .filter((s) => s.phase === "done" && s.feedback)

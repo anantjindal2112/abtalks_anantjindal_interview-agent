@@ -1,9 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { sampleCandidates } from "@/lib/data";
-import { summarizeCandidate } from "@/lib/plan";
+import { buildDayGrid, summarizeCandidate } from "@/lib/plan";
 import { validateCandidateJson } from "@/lib/validateCandidate";
 import type { Candidate } from "@/lib/types";
 
@@ -107,6 +107,51 @@ function BucketBar({ candidate, animate }: { candidate: Candidate; animate: bool
   );
 }
 
+const CELL_COLOR: Record<string, string> = {
+  confident: "var(--accent)",
+  struggled: "var(--warn)",
+  failed: "var(--danger)",
+  skipped: "var(--skip)",
+  none: "var(--border)",
+};
+
+/**
+ * A 31-day, GitHub-contribution-style grid — the candidate's REAL mission
+ * outcomes, one cell per curriculum day, sweeping in on hover/focus. Visually
+ * answers "what does 'built from real history' actually mean" without a
+ * word of copy. Pure CSS (:group-hover / :group-focus-within), not tied to
+ * the card's JS tilt state, so it still works for keyboard focus and for
+ * reduced-motion users (they just get an instant reveal, no stagger).
+ */
+function DayHeatmap({ candidate, reduceMotion }: { candidate: Candidate; reduceMotion: boolean | null }) {
+  const cells = buildDayGrid(candidate);
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-center gap-2 rounded-lg p-4 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100"
+      style={{ background: "color-mix(in srgb, var(--bg-inset) 97%, transparent)" }}
+    >
+      <div className="mono text-[9px] uppercase tracking-wide" style={{ color: "var(--fg-dim)" }}>
+        31-day mission history
+      </div>
+      <div className="grid grid-cols-8 gap-1">
+        {cells.map((c, i) => (
+          <span
+            key={c.day}
+            className="aspect-square rounded-[2px] opacity-0 scale-50 transition-all group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100"
+            style={{
+              background: CELL_COLOR[c.bucket],
+              transitionDuration: reduceMotion ? "0ms" : "260ms",
+              transitionDelay: reduceMotion ? "0ms" : `${i * 9}ms`,
+            }}
+            title={`day ${c.day}${c.bucket !== "none" ? ` · ${c.bucket}` : ""}`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
  * A cursor-tracked spotlight + gentle 3D tilt — plain mouse-move state, no
  * framer-motion springs needed. Reduced-motion candidates get a flat card
@@ -124,6 +169,7 @@ function CandidateCard({
   onSelect: (c: Candidate) => void;
 }) {
   const [tilt, setTilt] = useState({ rx: 0, ry: 0, mx: 50, my: 50, active: false });
+  const [scanning, setScanning] = useState(false);
   const frame = useRef<number | null>(null);
 
   function handleMove(e: React.MouseEvent<HTMLButtonElement>) {
@@ -140,6 +186,19 @@ function CandidateCard({
     setTilt((t) => ({ ...t, rx: 0, ry: 0, active: false }));
   }
 
+  // A brief scan-beam sweep before actually selecting — "scanning the real
+  // mission history to generate the plan" is what's about to happen (the
+  // next screen literally is that plan), this just gives it a visible beat
+  // instead of an instant cut. Skipped entirely under reduced motion.
+  function handleSelect() {
+    if (reduceMotion || scanning) {
+      onSelect(candidate);
+      return;
+    }
+    setScanning(true);
+    setTimeout(() => onSelect(candidate), 620);
+  }
+
   const counts = summarizeCandidate(candidate);
   const profile = PROFILE_LABEL[dominantBucket(counts)];
 
@@ -152,10 +211,11 @@ function CandidateCard({
     >
       <button
         type="button"
-        onClick={() => onSelect(candidate)}
+        onClick={handleSelect}
         onMouseMove={handleMove}
         onMouseLeave={resetTilt}
-        className="w-full text-left rounded-lg border p-4 cursor-pointer relative overflow-hidden focus-visible:border-[var(--accent-2)]"
+        aria-busy={scanning}
+        className="group w-full text-left rounded-lg border p-4 cursor-pointer relative overflow-hidden focus-visible:border-[var(--accent-2)]"
         style={{
           background: "var(--bg-inset)",
           borderColor: tilt.active ? "var(--accent-2)" : "var(--border)",
@@ -176,6 +236,33 @@ function CandidateCard({
             }}
           />
         )}
+        {!scanning && <DayHeatmap candidate={candidate} reduceMotion={reduceMotion} />}
+        <AnimatePresence>
+          {scanning && (
+            <motion.div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-lg"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <div className="absolute inset-0" style={{ background: "color-mix(in srgb, var(--bg-inset) 55%, transparent)" }} />
+              <motion.div
+                className="absolute inset-y-0"
+                style={{ width: 3, background: "var(--accent-2)", boxShadow: "0 0 16px 2px var(--accent-2)" }}
+                initial={{ left: "-2%" }}
+                animate={{ left: "102%" }}
+                transition={{ duration: 0.6, ease: "easeInOut" }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="mono text-[10px]" style={{ color: "var(--accent-2)" }}>
+                  scanning 31-day history…
+                </span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div className="relative">
           <div className="flex items-baseline justify-between gap-2">
             <span className="font-medium text-sm" style={{ color: "var(--fg)" }}>

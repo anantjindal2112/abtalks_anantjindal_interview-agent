@@ -3,23 +3,55 @@
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { DURATION, EASE_OUT } from "@/lib/motion";
+import { sampleCandidates } from "@/lib/data";
 
-const COMMAND = "npx interview_agent --cohort=ai-cohort --candidate=next";
+const PREFIX = "npx interview_agent --cohort=ai-cohort --candidate=";
+// Real bundled candidate IDs, "next" first (matches the original static
+// copy) — the prefix stays put, only this tail retypes, so the command line
+// reads as "cycling through real candidates" rather than a generic demo loop.
+const CANDIDATE_IDS = ["next", ...sampleCandidates.slice(0, 5).map((c) => c.member.id)];
 
+type Phase = "typing" | "holding" | "deleting";
+
+/**
+ * Types PREFIX once, statically, then loops the candidate id after it:
+ * type -> hold -> delete -> next id -> repeat. Reduced-motion gets the full
+ * first command, static, no loop — same contract the original had.
+ */
 function TypedCommand() {
   const reduceMotion = useReducedMotion();
-  const [shown, setShown] = useState(reduceMotion ? COMMAND.length : 0);
+  const [idIndex, setIdIndex] = useState(0);
+  const [shown, setShown] = useState(reduceMotion ? CANDIDATE_IDS[0].length : 0);
+  const [phase, setPhase] = useState<Phase>("typing");
 
   useEffect(() => {
     if (reduceMotion) return;
-    if (shown >= COMMAND.length) return;
-    const id = setTimeout(() => setShown((n) => n + 1), 28);
+    const current = CANDIDATE_IDS[idIndex];
+    let id: ReturnType<typeof setTimeout>;
+    if (phase === "typing") {
+      id =
+        shown < current.length
+          ? setTimeout(() => setShown((n) => n + 1), 55)
+          : setTimeout(() => setPhase("holding"), 20);
+    } else if (phase === "holding") {
+      id = setTimeout(() => setPhase("deleting"), 1400);
+    } else {
+      if (shown > 0) {
+        id = setTimeout(() => setShown((n) => n - 1), 30);
+      } else {
+        id = setTimeout(() => {
+          setIdIndex((i) => (i + 1) % CANDIDATE_IDS.length);
+          setPhase("typing");
+        }, 250);
+      }
+    }
     return () => clearTimeout(id);
-  }, [shown, reduceMotion]);
+  }, [shown, phase, idIndex, reduceMotion]);
 
   return (
     <span className="mono">
-      {COMMAND.slice(0, shown)}
+      {PREFIX}
+      {CANDIDATE_IDS[idIndex].slice(0, shown)}
       <span aria-hidden className="inline-block w-[0.55ch] -mb-0.5" style={{ background: "var(--accent)" }}>
         &nbsp;
       </span>

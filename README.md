@@ -62,8 +62,21 @@ below exists so the answer is "it keeps working," never "it 500s":
 | **Gemini as a fully swappable second provider** | `groq.ts` and `gemini.ts` implement an identical interface over shared validation logic (`llm-shared.ts`); flip `LLM_PROVIDER=gemini` in `.env.local` and `route.ts` never knows the difference. |
 | **Deterministic fallback, always** | If every provider call still fails, `fallbackTurn()`/`fallbackFeedback()` produce a plain, honest, on-contract response instead of erroring — the interview's guaranteed shape (8–12 questions, real feedback) never breaks, even with zero working API keys. |
 | **A lightweight rate limiter of our own** | `checkRateLimit()` protects the shared quota from a runaway script or retry loop — not from a determined attacker (the spec requires no auth), just from accidentally burning the free tier in minutes. |
-| **Two-tier session store** | In-memory (`globalThis`-backed, survives dev hot-reload) *backed by* a JSON file per session on disk — an interview survives a server restart, not just a code edit. On Vercel's read-only serverless filesystem it correctly falls back to `/tmp`, and degrades to in-memory-only (never crashes) if even that isn't writable. See [`src/lib/store.ts`](src/lib/store.ts). |
+| **Session store that survives a different worker answering the next turn** | In-memory (fast, survives dev hot-reload) is the first tier, but on Vercel specifically, two requests five seconds apart can land on two completely separate serverless instances — memory (and even `/tmp`) isn't shared between them, which can make an in-progress interview "disappear" mid-conversation. Add the free Upstash-for-Redis integration (Vercel Marketplace, no card required) and `store.ts` picks up its env vars automatically — Redis becomes the real, shared source of truth. Without it, falls back to a disk-backed store (real persistence on a single long-lived process, e.g. local dev) which itself falls back to in-memory-only if even disk isn't writable. Every tier degrades, never crashes. See [`src/lib/store.ts`](src/lib/store.ts). |
 | **300-run fuzz-tested control flow** | The guardrail engine (question caps, skip 2-strike rule, coverage minimums) is unit-tested against adversarial models and skip patterns in `scripts/test-guardrails.ts` — an actual infinite-loop bug was caught and fixed this way, not discovered live in front of a judge. Run it with `npm run test:guardrails`. |
+
+### Recommended for the deployed Vercel URL: add free Redis
+
+Without it, the app still works — it just inherits Vercel's normal serverless
+trade-off (a different instance answering a later turn won't have the
+earlier one in memory). Two minutes, free, no card:
+
+1. Vercel dashboard → your project → **Storage** tab → **Create Database** →
+   pick the Upstash **Redis** option (or add it from the Marketplace).
+2. Connect it to this project. Vercel injects `KV_REST_API_URL` /
+   `KV_REST_API_TOKEN` automatically — no copying secrets by hand.
+3. Redeploy (or it redeploys itself). `store.ts` picks the new env vars up
+   with zero code changes.
 
 ## Tech stack
 
@@ -194,12 +207,13 @@ provider is actually answering.
 - Cohort Insights (the `/records` leaderboard) is in-memory only — it resets
   on server restart. It's a demo/BI bonus, not core product, so this trade-off
   is deliberate.
-- Interview session state now survives a restart via the two-tier disk-backed
-  store (see [Reliability & resilience](#reliability--resilience)) — but on a
-  true serverless host, concurrent invocations on different instances still
-  won't see each other's writes mid-interview. Fine for a single-demo-at-a-time
-  hackathon deployment; a real production deployment would still want
-  Redis/a DB.
+- Interview session state is reliable across Vercel's separate serverless
+  instances **once the free Redis integration is configured** (see
+  [Reliability & resilience](#reliability--resilience)) — without it, it falls
+  back to a disk store that only actually helps on a single long-lived
+  process (local dev, or a real server/VM), not on Vercel specifically, where
+  concurrent requests can hit different instances that don't share a
+  filesystem.
 - Groq's free tier caps at 8,000 input tokens/minute — long interviews or
   rapid parallel demo sessions can hit this; the app degrades to a
   deterministic fallback turn (or the backup key, then Gemini if configured)

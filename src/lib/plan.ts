@@ -69,6 +69,24 @@ export function summarizeCandidate(candidate: Candidate) {
   return counts;
 }
 
+export type DayCell = { day: number; bucket: MissionBucket | "none" };
+
+/**
+ * Full 31-day grid (cohort length, mirrors curriculum.json), one cell per
+ * day whether or not the candidate has a mission recorded for it — the
+ * candidate-picker hover heatmap's data source. "none" means no mission
+ * entry at all for that day, distinct from any real bucket.
+ */
+export function buildDayGrid(candidate: Candidate): DayCell[] {
+  const byDay = new Map<number, Mission>();
+  for (const m of candidate.missions ?? []) byDay.set(m.day, m);
+  return Array.from({ length: 31 }, (_, i) => {
+    const day = i + 1;
+    const m = byDay.get(day);
+    return { day, bucket: m ? bucketMission(m) : "none" };
+  });
+}
+
 export type LearningMapEntry = { day: number; title: string; attempts?: number };
 
 export type LearningMap = {
