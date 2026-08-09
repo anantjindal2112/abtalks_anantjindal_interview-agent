@@ -119,6 +119,35 @@ function ThinkingIndicator() {
   );
 }
 
+// Relative bar heights (px) — picked to look like an organic voice/token
+// pulse rather than uniform bars, not actually driven by any real signal.
+const WAVEFORM_BARS = [5, 9, 4, 8, 3];
+
+/**
+ * A one-shot pulse next to the "interviewer"/"you" label the instant a
+ * message lands — bars rise then settle to a flat, faint baseline rather
+ * than vanishing, reading as "signal received, now quiet" instead of a
+ * decorative loop. Fires exactly once per Bubble mount (one per real
+ * message), never repeats — "something moved because something happened,"
+ * not ambient animation.
+ */
+function MessageWaveform() {
+  return (
+    <span className="inline-flex items-end gap-[1.5px] h-2.5" aria-hidden>
+      {WAVEFORM_BARS.map((h, i) => (
+        <motion.span
+          key={i}
+          className="w-[2px] rounded-full"
+          style={{ background: "var(--accent-2)" }}
+          initial={{ height: 0, opacity: 0.95 }}
+          animate={{ height: [0, h, 2], opacity: [0.95, 1, 0.35] }}
+          transition={{ duration: 0.55, delay: i * 0.035, ease: "easeOut" }}
+        />
+      ))}
+    </span>
+  );
+}
+
 function Bubble({ message, evaluation }: { message: Message; evaluation?: TurnEvaluation }) {
   const reduceMotion = useReducedMotion();
   const isInterviewer = message.role === "interviewer";
@@ -130,8 +159,12 @@ function Bubble({ message, evaluation }: { message: Message; evaluation?: TurnEv
       className={`flex ${isInterviewer ? "justify-start" : "justify-end"}`}
     >
       <div className={`max-w-[85%] ${isInterviewer ? "" : "text-right"}`}>
-        <div className="mono text-[10px] mb-1 flex items-center gap-1.5" style={{ color: "var(--fg-dim)" }}>
+        <div
+          className={`mono text-[10px] mb-1 flex items-center gap-1.5 ${isInterviewer ? "" : "justify-end"}`}
+          style={{ color: "var(--fg-dim)" }}
+        >
           {isInterviewer ? "interviewer" : "you"}
+          {!reduceMotion && <MessageWaveform />}
           {isInterviewer && evaluation && <DecisionChip evaluation={evaluation} />}
         </div>
         <div

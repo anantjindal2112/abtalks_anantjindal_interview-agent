@@ -73,6 +73,7 @@ const FEATURES = [
     desc: "The model decides whether to probe deeper on an answer or move on, reacting to what was actually said.",
     example:
       "e.g. a vague answer gets decision: CLARIFY and a sharper same-topic question — not a polite \"great, thanks!\" and a scripted next question.",
+    decisionFlow: true,
   },
   {
     icon: "✓",
@@ -89,6 +90,67 @@ const FEATURES = [
       "e.g. 5 category scores + real misconceptions only — a field the model didn't confidently return is dropped, never faked to look complete.",
   },
 ];
+
+const DECISION_STEPS = ["answer", "evaluate"];
+const DECISION_BRANCHES = ["CLARIFY", "DEEPEN", "NEXT_TOPIC"];
+
+/**
+ * A tiny animated flow diagram — answer -> evaluate -> one of the real
+ * decision labels the backend actually emits (types.ts's DecisionLabel),
+ * with CLARIFY highlighted to match the card's own example text just above
+ * it ("a vague answer gets decision: CLARIFY"). Plays once when the card
+ * flips to its back face, not on a loop — tied to a real interaction, not
+ * decorative. Reduced-motion renders the same end state instantly.
+ */
+function DecisionFlow({ active, reduceMotion }: { active: boolean; reduceMotion: boolean | null }) {
+  return (
+    <div className="mt-2 flex flex-col gap-1.5" aria-hidden>
+      <div className="flex items-center gap-1 mono text-[9px] flex-wrap" style={{ color: "var(--fg-dim)" }}>
+        {DECISION_STEPS.map((step, i) => (
+          <span key={step} className="flex items-center gap-1">
+            <motion.span
+              initial={reduceMotion ? false : { opacity: 0, x: -4 }}
+              animate={active ? { opacity: 1, x: 0 } : reduceMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: -4 }}
+              transition={{ delay: reduceMotion ? 0 : i * 0.12, duration: 0.2 }}
+              className="rounded border px-1.5 py-0.5"
+              style={{ borderColor: "var(--border)" }}
+            >
+              {step}
+            </motion.span>
+            <span>→</span>
+          </span>
+        ))}
+        <div className="flex items-center gap-1">
+          {DECISION_BRANCHES.map((branch, i) => {
+            const isPicked = branch === "CLARIFY";
+            return (
+              <motion.span
+                key={branch}
+                initial={reduceMotion ? false : { opacity: 0, scale: 0.8 }}
+                animate={
+                  active
+                    ? { opacity: 1, scale: 1 }
+                    : reduceMotion
+                      ? { opacity: 1, scale: 1 }
+                      : { opacity: 0, scale: 0.8 }
+                }
+                transition={{ delay: reduceMotion ? 0 : 0.3 + i * 0.08, duration: 0.2 }}
+                className="mono text-[8px] rounded-full px-1.5 py-0.5 border"
+                style={{
+                  borderColor: isPicked ? "var(--accent-2)" : "var(--border)",
+                  color: isPicked ? "var(--accent-2)" : "var(--fg-dim)",
+                  background: isPicked ? "color-mix(in srgb, var(--accent-2) 14%, transparent)" : "transparent",
+                }}
+              >
+                {branch}
+              </motion.span>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function FeatureCard({
   f,
@@ -166,6 +228,7 @@ function FeatureCard({
             <div className="mt-1.5 text-xs leading-relaxed" style={{ color: "var(--fg)" }}>
               {f.example}
             </div>
+            {f.decisionFlow && <DecisionFlow active={flipped} reduceMotion={reduceMotion} />}
           </div>
         </motion.div>
       </button>
