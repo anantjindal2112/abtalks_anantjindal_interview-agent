@@ -37,10 +37,16 @@ const redis = REDIS_URL && REDIS_TOKEN ? new Redis({ url: REDIS_URL, token: REDI
 // 6 hours — generous for a demo interview (never takes more than a handful
 // of minutes), just bounds unbounded growth in the Redis free tier.
 const SESSION_TTL_SECONDS = 60 * 60 * 6;
+// How many completed sessions Cohort Insights (/records) keeps around when
+// Redis is configured — a demo/BI bonus feature, not a hard limit on
+// anything core.
+const COMPLETED_LIST_MAX = 200;
 
 function redisKey(sessionId: string): string {
   return `interview-session:${sessionId}`;
 }
+
+const COMPLETED_LIST_KEY = "interview-completed-sessions";
 
 // Vercel's serverless functions ship a read-only deployment bundle — only
 // os.tmpdir() (/tmp) is writable there, and Vercel always sets VERCEL=1.
@@ -115,6 +121,16 @@ export async function saveSession(session: SessionState): Promise<void> {
   if (redis) {
     try {
       await redis.set(redisKey(session.sessionId), session, { ex: SESSION_TTL_SECONDS });
+      // Cross-instance Cohort Insights: index completed sessions in a capped
+      // list so /records can see interviews finished on ANY instance, not
+      // just whichever one happens to serve that particular GET request.
+      // Fire only once — this write only ever runs on a genuine "done"
+      // transition since route.ts short-circuits already-concluded sessions
+      // before reaching saveSession again.
+      if (session.phase === "done") {
+        await redis.lpush(COMPLETED_LIST_KEY, session.sessionId);
+        await redis.ltrim(COMPLETED_LIST_KEY, 0, COMPLETED_LIST_MAX - 1);
+      }
       return; // Redis succeeded — it's the shared source of truth, disk isn't needed too
     } catch (err) {
       console.error("[store] Redis write failed, falling back to disk/memory for this session:", err);
@@ -129,6 +145,27 @@ export async function saveSession(session: SessionState): Promise<void> {
     fsAvailable = false;
     console.error("[store] failed to persist session to disk, continuing in-memory only:", err);
   }
+}
+
+/**
+ * Every completed interview Cohort Insights (/records) should show. When
+ * Redis is configured, reads the shared cross-instance index (real fix —
+ * two different serverless instances can each complete an interview and
+ * both should show up); otherwise falls back to whatever this single
+ * process has seen, same as before — a demo/BI bonus feature staying
+ * honestly scoped to what it can actually promise.
+ */
+export async function getCompletedSessions(): Promise<SessionState[]> {
+  if (redis) {
+    try {
+      const ids = await redis.lrange<string>(COMPLETED_LIST_KEY, 0, COMPLETED_LIST_MAX - 1);
+      const fetched = await Promise.all(ids.map((id) => getSession(id)));
+      return fetched.filter((s): s is SessionState => !!s);
+    } catch (err) {
+      console.error("[store] Redis completed-list read failed, falling back to local cache:", err);
+    }
+  }
+  return Array.from(sessions.values()).filter((s) => s.phase === "done" && s.feedback);
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {

@@ -17,7 +17,12 @@ jobs:
           node-version: 20
           cache: npm
 
-      - run: npm ci
+      # npm install, not npm ci: the lockfile was generated on macOS and
+      # doesn't enumerate every Linux-specific optional dependency (Tailwind
+      # v4's native CSS parser ships platform-specific optional packages) -
+      # npm ci's strict lockfile-must-match-exactly check fails on that gap
+      # even though the actual dependency tree resolves fine either way.
+      - run: npm install
 
       - name: Type check
         run: npx tsc --noEmit

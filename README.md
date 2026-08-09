@@ -204,9 +204,13 @@ provider is actually answering.
 
 ## Known limitations
 
-- Cohort Insights (the `/records` leaderboard) is in-memory only — it resets
-  on server restart. It's a demo/BI bonus, not core product, so this trade-off
-  is deliberate.
+- Cohort Insights (the `/records` leaderboard) is cross-instance-correct
+  **once Redis is configured** (same integration as the session store —
+  `getCompletedSessions()` in `store.ts` reads a shared, capped index of
+  finished interviews) — without it, falls back to whatever this single
+  process has seen, same as session state's own fallback. It's a demo/BI
+  bonus, not core product, so even the fallback is a deliberate, honest
+  trade-off rather than a hidden one.
 - Interview session state is reliable across Vercel's separate serverless
   instances **once the free Redis integration is configured** (see
   [Reliability & resilience](#reliability--resilience)) — without it, it falls
